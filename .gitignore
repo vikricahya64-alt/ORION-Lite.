@@ -13,3 +13,7 @@ logs/
 *_backup.py
 
 .env
+logs/
+*.db
+__pycache__/
+*.pyc

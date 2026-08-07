@@ -1,64 +1,273 @@
 from datetime import datetime
 
 
+
 class AdaptiveLearning:
 
-    def __init__(self):
+
+    def __init__(self, memory=None):
+
+        self.memory = memory
+
         self.history = []
 
 
+
+    # ==========================
+    # ANALYZE EXPERIENCE
+    # ==========================
+
     def analyze(self, job):
 
+
         if not job:
+
+
             return {
+
                 "status": "failed",
+
                 "score": 0,
-                "strategy": "Tidak ada data untuk dianalisis",
+
+                "strategy": "Tidak ada data",
+
                 "confidence": 0
+
             }
 
 
-        # Ambil informasi job
-        goal = job.get("goal", "Unknown")
-        step = job.get("step", "Unknown")
+
+        goal = job.get(
+
+            "goal",
+
+            "unknown"
+
+        )
 
 
-        # Default hasil
+        step = job.get(
+
+            "step",
+
+            "unknown"
+
+        )
+
+
+
         score = 0
+
         status = "unknown"
-        strategy = "Ulangi analisis dengan pendekatan baru"
+
+        strategy = "Perlu analisis tambahan"
+
         confidence = 0.2
 
 
-        # Evaluasi berdasarkan status eksekusi
+
+        # ==========================
+        # SUCCESS EVALUATION
+        # ==========================
+
+
         if job.get("status") == "completed":
+
+
             score = 100
+
             status = "success"
-            strategy = "Pertahankan metode karena hasil optimal"
+
+            strategy = (
+
+                "Pertahankan metode"
+
+            )
+
             confidence = 1.0
 
 
-        # Simpan pengalaman adaptive learning
-        record = {
-            "goal": goal,
-            "step": step,
-            "score": score,
-            "confidence": confidence,
-            "time": datetime.utcnow().isoformat()
+
+
+        elif job.get("success") is True:
+
+
+            score = 90
+
+            status = "success"
+
+
+            strategy = (
+
+                "Metode efektif, ulangi pola"
+
+            )
+
+
+            confidence = 0.9
+
+
+
+
+
+        elif job.get("success") is False:
+
+
+            score = 20
+
+            status = "failed"
+
+
+            strategy = (
+
+                "Cari pendekatan alternatif"
+
+            )
+
+
+            confidence = 0.4
+
+
+
+
+        result = {
+
+
+            "goal":
+
+            goal,
+
+
+            "step":
+
+            step,
+
+
+            "score":
+
+            score,
+
+
+            "status":
+
+            status,
+
+
+            "strategy":
+
+            strategy,
+
+
+            "confidence":
+
+            confidence,
+
+
+            "time":
+
+            datetime.now().isoformat()
+
         }
 
 
-        self.history.append(record)
 
 
-        return {
-            "status": status,
-            "score": score,
-            "strategy": strategy,
-            "confidence": confidence
-        }
+
+        # local history
+
+        self.history.append(
+
+            result
+
+        )
+
+
+
+
+
+        # permanent memory
+
+        if self.memory:
+
+
+            self.memory.remember(
+
+                "adaptive_learning",
+
+                result
+
+            )
+
+
+
+        return result
+
+
+
+
+
+
+    # ==========================
+    # HISTORY
+    # ==========================
 
 
     def history_log(self):
 
         return self.history
+
+
+
+
+    # ==========================
+    # EXPERIENCE SUMMARY
+    # ==========================
+
+
+    def summary(self):
+
+
+        total = len(
+
+            self.history
+
+        )
+
+
+        if total == 0:
+
+
+            return {
+
+
+                "experience":0,
+
+                "average_score":0
+
+            }
+
+
+
+        score = sum(
+
+            x["score"]
+
+            for x in self.history
+
+        )
+
+
+
+        return {
+
+
+            "experience":
+
+            total,
+
+
+            "average_score":
+
+            score / total
+
+        }
