@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+
+.venv/
+venv/
+
+*.db
+*.sqlite
+
+logs/
+
+*.backup
+*_backup.py
+
+.env
