@@ -1,0 +1,106 @@
+import asyncio
+import signal
+
+from worker import ORIONWorker
+from orion_core import ORIONCore
+
+
+class ORION:
+
+    def __init__(self):
+
+        self.worker = ORIONWorker()
+        self.core = ORIONCore()
+
+        self.running = True
+
+
+    async def shutdown(self):
+
+        print("ORION SHUTDOWN SIGNAL RECEIVED")
+
+        self.running = False
+
+
+    async def run(self):
+
+        print("ORION DAEMON STARTING")
+
+
+        # Job awal jika database masih kosong
+        if self.worker.queue.pending_count() == 0:
+
+            self.worker.queue.add(
+                job_type="learning",
+                data={
+                    "goal": "boot",
+                    "step": "startup"
+                },
+                priority=1
+            )
+
+
+        while self.running:
+
+
+            try:
+
+                result = await self.worker.run_once()
+
+                print(result)
+
+
+                # Jika tidak ada pekerjaan,
+                # aktifkan Planner untuk membuat job baru
+
+                if self.worker.queue.pending_count() == 0:
+
+                    created = self.core.heartbeat()
+
+                    if created:
+
+                        print(
+                            "ORION PLANNER CREATED NEW JOB"
+                        )
+
+
+            except Exception as e:
+
+                print(
+                    "ORION ERROR:",
+                    e
+                )
+
+
+            await asyncio.sleep(5)
+
+
+
+async def main():
+
+    agent = ORION()
+
+
+    loop = asyncio.get_running_loop()
+
+
+    for sig in (
+        signal.SIGTERM,
+        signal.SIGINT
+    ):
+
+        loop.add_signal_handler(
+            sig,
+            lambda: asyncio.create_task(
+                agent.shutdown()
+            )
+        )
+
+
+    await agent.run()
+
+
+
+if __name__ == "__main__":
+
+    asyncio.run(main())
