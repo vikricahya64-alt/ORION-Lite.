@@ -62,11 +62,25 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf("Starting...")
             }
 
+    var recall = remember {
+        mutableStateOf("No previous event.")
+    }
+
             LaunchedEffect(Unit) {
 
                 kernel.heartbeat()
 
-                val device = monitor.read()
+                
+
+        val previous = memory.recall()
+
+        recall.value = if (previous != null) {
+            "Previous: ${previous.state} | Battery: ${previous.battery}% | Action: ${previous.actionId} | Result: ${previous.result}"
+        } else {
+            "No previous event."
+        }
+
+val device = monitor.read()
                 val decision = core.analyze(device)
                 val routedAction = router.route(decision)
 
@@ -163,6 +177,13 @@ class MainActivity : ComponentActivity() {
                         modifier =
                             Modifier.padding(top = 8.dp)
                     )
+
+          Text(
+              text =
+                  "Recall: ${recall.value}",
+              modifier =
+                  Modifier.padding(top = 8.dp)
+          )
                 }
             }
         }
