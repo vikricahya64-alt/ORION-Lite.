@@ -8,7 +8,7 @@ on:
       - master
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   android:
@@ -28,16 +28,24 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Environment
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Generate Gradle Wrapper
         run: |
           set -eux
-          java -version
-          ./gradlew --version || true
+
+          gradle wrapper \
+            --gradle-version 8.10.2 \
+            --distribution-type bin
+
+          chmod +x gradlew
 
       - name: Validate Android project
         run: |
@@ -51,28 +59,30 @@ jobs:
 
           echo "Android project structure: OK"
 
-      - name: Prepare Gradle
+      - name: Show Gradle version
         run: |
-          set -eux
-          chmod +x gradlew
+          ./gradlew --version
 
       - name: Run unit tests
         run: |
-          set -eux
-          ./gradlew test --no-daemon --stacktrace
+          ./gradlew test \
+            --no-daemon \
+            --stacktrace
 
       - name: Build debug APK
         run: |
-          set -eux
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace
 
       - name: Find APK
-        if: success()
         run: |
-          find app/build/outputs -type f -name "*.apk" -print
+          find app/build/outputs \
+            -type f \
+            -name "*.apk" \
+            -print
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ORION-Lite-debug
