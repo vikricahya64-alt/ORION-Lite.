@@ -70,71 +70,66 @@ jobs:
           path = Path(sys.argv[1])
           text = path.read_text()
 
-          # ------------------------------------------------------------
-          # 1. Locate complete action remember block
-          # ------------------------------------------------------------
+          # ============================================================
+          # 1. Find complete Action state block
+          # ============================================================
 
-          action_marker = "var action = remember {"
-          action_start = text.find(action_marker)
+          marker = "var action = remember {"
+          start = text.find(marker)
 
-          if action_start == -1:
+          if start < 0:
               raise SystemExit("ERROR: action state not found")
 
-          action_open = text.find("{", action_start)
+          open_brace = text.find("{", start)
+
+          if open_brace < 0:
+              raise SystemExit("ERROR: action opening brace not found")
 
           depth = 0
-          action_end = None
+          end = None
 
-          for i in range(action_open, len(text)):
-              char = text[i]
-
-              if char == "{":
+          for i in range(open_brace, len(text)):
+              if text[i] == "{":
                   depth += 1
-
-              elif char == "}":
+              elif text[i] == "}":
                   depth -= 1
 
                   if depth == 0:
-                      action_end = i + 1
+                      end = i + 1
                       break
 
-          if action_end is None:
+          if end is None:
               raise SystemExit("ERROR: action block is not balanced")
 
-          # ------------------------------------------------------------
-          # 2. Add Recall state AFTER complete Action block
-          # ------------------------------------------------------------
+          # ============================================================
+          # 2. Add Recall state after Action state
+          # ============================================================
 
           recall_state = '''
-
+          
               var recall = remember {
                   mutableStateOf("No previous event.")
               }'''
 
-          text = (
-              text[:action_end]
-              + recall_state
-              + text[action_end:]
-          )
+          text = text[:end] + recall_state + text[end:]
 
-          # ------------------------------------------------------------
-          # 3. Add Recall immediately after START of LaunchedEffect
-          #    and BEFORE Observe
-          # ------------------------------------------------------------
+          # ============================================================
+          # 3. Add recall() before Observe
+          # ============================================================
 
-          effect_marker = "LaunchedEffect(Unit) {"
-          effect_start = text.find(effect_marker)
+          effect = text.find("LaunchedEffect(Unit) {")
 
-          if effect_start == -1:
+          if effect < 0:
               raise SystemExit("ERROR: LaunchedEffect(Unit) not found")
 
-          observe_marker = "                val device = monitor.read()"
-          observe_pos = text.find(observe_marker, effect_start)
+          observe = text.find("val device = monitor.read()", effect)
 
-          if observe_pos == -1:
-              raise SystemExit("ERROR: Observe marker not found")
+          if observe < 0:
+              raise SystemExit("ERROR: monitor.read() not found")
 
-          recall_logic = '''                val previous = memory.recall()
+          recall_logic = '''
+          
+                  val previous = memory.recall()
 
                   recall.value = if (previous != null) {
                       "Previous: ${previous.state} | Battery: ${previous.battery}% | Action: ${previous.actionId} | Result: ${previous.result}"
@@ -144,38 +139,61 @@ jobs:
 
           '''
 
-          text = (
-              text[:observe_pos]
-              + recall_logic
-              + text[observe_pos:]
-          )
+          text = text[:observe] + recall_logic + text[observe:]
 
-          # ------------------------------------------------------------
-          # 4. Locate the actual multiline Action Text block
-          # ------------------------------------------------------------
+          # ============================================================
+          # 4. Find Action UI using the Action string only
+          # ============================================================
 
-          action_ui_marker = '''                    Text(
-                        text =
-                            "Action: ${action.value}",
-                        modifier =
-                            Modifier.padding(top = 8.dp)
-                    )'''
+          action_string = '"Action: ${action.value}"'
+          string_pos = text.find(action_string)
 
-          action_ui_pos = text.find(action_ui_marker)
+          if string_pos < 0:
+              raise SystemExit("ERROR: Action UI string not found")
 
-          if action_ui_pos == -1:
+          # Find the nearest Text( before the Action string.
+          text_call = text.rfind("Text(", 0, string_pos)
+
+          if text_call < 0:
+              raise SystemExit("ERROR: Action Text call not found")
+
+          # ============================================================
+          # 5. Find closing parenthesis of Text(...)
+          # ============================================================
+
+          depth = 0
+          text_end = None
+
+          for i in range(text_call, len(text)):
+              char = text[i]
+
+              if char == "(":
+                  depth += 1
+
+              elif char == ")":
+                  depth -= 1
+
+                  if depth == 0:
+                      text_end = i + 1
+                      break
+
+          if text_end is None:
               raise SystemExit(
-                  "ERROR: Actual multiline Action Text block not found"
+                  "ERROR: Action Text parenthesis is not balanced"
               )
 
-          action_ui_end = action_ui_pos + len(action_ui_marker)
+          # Make sure this Text call really contains the Action string.
+          if action_string not in text[text_call:text_end]:
+              raise SystemExit(
+                  "ERROR: Located Text call does not contain Action string"
+              )
 
-          # ------------------------------------------------------------
-          # 5. Add Recall UI AFTER complete Action Text block
-          # ------------------------------------------------------------
+          # ============================================================
+          # 6. Insert Recall UI after Action Text
+          # ============================================================
 
           recall_ui = '''
-
+          
                     Text(
                         text =
                             "Recall: ${recall.value}",
@@ -183,15 +201,11 @@ jobs:
                             Modifier.padding(top = 8.dp)
                     )'''
 
-          text = (
-              text[:action_ui_end]
-              + recall_ui
-              + text[action_ui_end:]
-          )
+          text = text[:text_end] + recall_ui + text[text_end:]
 
-          # ------------------------------------------------------------
-          # 6. Write result
-          # ------------------------------------------------------------
+          # ============================================================
+          # 7. Write
+          # ============================================================
 
           path.write_text(text)
 
@@ -233,7 +247,7 @@ jobs:
           checks = {
               "Action exists": action >= 0,
               "Recall state exists": recall_state >= 0,
-              "Recall state after Action": (
+              "Recall after Action": (
                   recall_state > action
               ),
               "LaunchedEffect exists": effect >= 0,
