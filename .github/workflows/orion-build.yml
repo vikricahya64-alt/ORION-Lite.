@@ -19,9 +19,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: orion-android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android:
-    name: Android Test and Build
+    name: Test and Build APK
     runs-on: ubuntu-latest
 
     defaults:
@@ -41,24 +45,39 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
+      - name: Validate Android foundation
+        run: |
+          set -eux
+
+          test -d app
+          test -f settings.gradle.kts
+          test -f build.gradle.kts
+          test -f app/build.gradle.kts
+
+          echo "Android project: OK"
+
       - name: Validate Gradle Wrapper
         run: |
           set -eux
 
           test -f gradlew
+          test -f gradle/wrapper/gradle-wrapper.jar
           test -f gradle/wrapper/gradle-wrapper.properties
 
           chmod +x gradlew
 
           echo "Gradle Wrapper: OK"
 
-      - name: Show environment
+      - name: Verify Gradle
         run: |
-          java -version
+          set -eux
+
           ./gradlew --version
 
       - name: Run unit tests
         run: |
+          set -eux
+
           ./gradlew :app:testDebugUnitTest \
             --no-daemon \
             --stacktrace \
@@ -66,6 +85,8 @@ jobs:
 
       - name: Build debug APK
         run: |
+          set -eux
+
           ./gradlew :app:assembleDebug \
             --no-daemon \
             --stacktrace \
@@ -79,9 +100,8 @@ jobs:
 
           test -f "$APK"
 
+          echo "APK:"
           ls -lh "$APK"
-
-          echo "APK verified."
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
