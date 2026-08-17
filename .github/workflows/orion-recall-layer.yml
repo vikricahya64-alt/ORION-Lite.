@@ -70,22 +70,30 @@ jobs:
           path = Path(sys.argv[1])
           text = path.read_text()
 
-          action_start = text.find("var action = remember {")
+          # ------------------------------------------------------------
+          # 1. Locate complete action remember block
+          # ------------------------------------------------------------
+
+          action_marker = "var action = remember {"
+          action_start = text.find(action_marker)
+
           if action_start == -1:
               raise SystemExit("ERROR: action state not found")
 
           action_open = text.find("{", action_start)
-          if action_open == -1:
-              raise SystemExit("ERROR: action opening brace not found")
 
           depth = 0
           action_end = None
 
           for i in range(action_open, len(text)):
-              if text[i] == "{":
+              char = text[i]
+
+              if char == "{":
                   depth += 1
-              elif text[i] == "}":
+
+              elif char == "}":
                   depth -= 1
+
                   if depth == 0:
                       action_end = i + 1
                       break
@@ -93,13 +101,26 @@ jobs:
           if action_end is None:
               raise SystemExit("ERROR: action block is not balanced")
 
+          # ------------------------------------------------------------
+          # 2. Add Recall state AFTER complete Action block
+          # ------------------------------------------------------------
+
           recall_state = '''
 
               var recall = remember {
                   mutableStateOf("No previous event.")
               }'''
 
-          text = text[:action_end] + recall_state + text[action_end:]
+          text = (
+              text[:action_end]
+              + recall_state
+              + text[action_end:]
+          )
+
+          # ------------------------------------------------------------
+          # 3. Add Recall immediately after START of LaunchedEffect
+          #    and BEFORE Observe
+          # ------------------------------------------------------------
 
           effect_marker = "LaunchedEffect(Unit) {"
           effect_start = text.find(effect_marker)
@@ -107,50 +128,70 @@ jobs:
           if effect_start == -1:
               raise SystemExit("ERROR: LaunchedEffect(Unit) not found")
 
-          recall_logic = '''
+          observe_marker = "                val device = monitor.read()"
+          observe_pos = text.find(observe_marker, effect_start)
 
-                  val previous = memory.recall()
+          if observe_pos == -1:
+              raise SystemExit("ERROR: Observe marker not found")
+
+          recall_logic = '''                val previous = memory.recall()
 
                   recall.value = if (previous != null) {
                       "Previous: ${previous.state} | Battery: ${previous.battery}% | Action: ${previous.actionId} | Result: ${previous.result}"
                   } else {
                       "No previous event."
                   }
+
           '''
 
-          effect_body_start = effect_start + len(effect_marker)
-
           text = (
-              text[:effect_body_start]
+              text[:observe_pos]
               + recall_logic
-              + text[effect_body_start:]
+              + text[observe_pos:]
           )
 
-          action_text = 'text = "Action: ${action.value}"'
-          action_text_pos = text.find(action_text)
+          # ------------------------------------------------------------
+          # 4. Locate the actual multiline Action Text block
+          # ------------------------------------------------------------
 
-          if action_text_pos == -1:
-              raise SystemExit("ERROR: Action Text not found")
+          action_ui_marker = '''                    Text(
+                        text =
+                            "Action: ${action.value}",
+                        modifier =
+                            Modifier.padding(top = 8.dp)
+                    )'''
 
-          text_after_action = action_text_pos + len(action_text)
+          action_ui_pos = text.find(action_ui_marker)
 
-          action_text_block_end = text.find(")", text_after_action)
+          if action_ui_pos == -1:
+              raise SystemExit(
+                  "ERROR: Actual multiline Action Text block not found"
+              )
 
-          if action_text_block_end == -1:
-              raise SystemExit("ERROR: Action Text closing parenthesis not found")
+          action_ui_end = action_ui_pos + len(action_ui_marker)
+
+          # ------------------------------------------------------------
+          # 5. Add Recall UI AFTER complete Action Text block
+          # ------------------------------------------------------------
 
           recall_ui = '''
 
-                  Text(
-                      text = "Recall: ${recall.value}",
-                      modifier = Modifier.padding(top = 8.dp)
-                  )'''
+                    Text(
+                        text =
+                            "Recall: ${recall.value}",
+                        modifier =
+                            Modifier.padding(top = 8.dp)
+                    )'''
 
           text = (
-              text[:action_text_block_end + 1]
+              text[:action_ui_end]
               + recall_ui
-              + text[action_text_block_end + 1:]
+              + text[action_ui_end:]
           )
+
+          # ------------------------------------------------------------
+          # 6. Write result
+          # ------------------------------------------------------------
 
           path.write_text(text)
 
@@ -161,11 +202,11 @@ jobs:
 
           grep -Fq 'var recall = remember {' "$MAIN"
           grep -Fq 'val previous = memory.recall()' "$MAIN"
-          grep -Fq 'text = "Recall: ${recall.value}"' "$MAIN"
+          grep -Fq '"Recall: ${recall.value}"' "$MAIN"
 
           test "$(grep -Fc 'var recall = remember {' "$MAIN")" -eq 1
           test "$(grep -Fc 'val previous = memory.recall()' "$MAIN")" -eq 1
-          test "$(grep -Fc 'text = "Recall: ${recall.value}"' "$MAIN")" -eq 1
+          test "$(grep -Fc '"Recall: ${recall.value}"' "$MAIN")" -eq 1
 
           echo "Recall Layer source verification passed."
 
@@ -182,27 +223,39 @@ jobs:
 
           text = Path(sys.argv[1]).read_text()
 
-          action_start = text.find("var action = remember {")
-          recall_start = text.find("var recall = remember {")
-          effect_start = text.find("LaunchedEffect(Unit) {")
+          action = text.find("var action = remember {")
+          recall_state = text.find("var recall = remember {")
+          effect = text.find("LaunchedEffect(Unit) {")
           recall_logic = text.find("val previous = memory.recall()")
           observe = text.find("val device = monitor.read()")
-          recall_ui = text.find('text = "Recall: ${recall.value}"')
+          recall_ui = text.find('"Recall: ${recall.value}"')
 
           checks = {
-              "action exists": action_start >= 0,
-              "recall state exists": recall_start >= 0,
-              "recall state after action": recall_start > action_start,
-              "LaunchedEffect exists": effect_start >= 0,
-              "recall before observe": recall_logic >= 0 and observe >= 0 and recall_logic < observe,
-              "recall UI exists": recall_ui >= 0,
+              "Action exists": action >= 0,
+              "Recall state exists": recall_state >= 0,
+              "Recall state after Action": (
+                  recall_state > action
+              ),
+              "LaunchedEffect exists": effect >= 0,
+              "Recall logic exists": recall_logic >= 0,
+              "Recall before Observe": (
+                  recall_logic >= 0
+                  and observe >= 0
+                  and recall_logic < observe
+              ),
+              "Recall UI exists": recall_ui >= 0,
           }
 
-          for name, ok in checks.items():
-              print(f"{name}: {'OK' if ok else 'FAIL'}")
+          for name, result in checks.items():
+              print(
+                  f"{name}: "
+                  f"{'OK' if result else 'FAIL'}"
+              )
 
           if not all(checks.values()):
-              raise SystemExit("ERROR: Recall Layer placement verification failed")
+              raise SystemExit(
+                  "ERROR: Recall placement verification failed"
+              )
 
           print("Recall placement verification passed.")
           PY
