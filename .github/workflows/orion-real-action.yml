@@ -1,0 +1,178 @@
+name: ORION Real Android Action
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ORION with Real Action
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Replace ActionExecutor with Android executor
+        shell: bash
+        run: |
+          set -eux
+
+          cat > android/app/src/main/java/com/orion/lite/orion/ActionExecutor.kt <<'EOF'
+          package com.orion.lite.orion
+
+          import android.content.Context
+          import android.content.Intent
+          import android.provider.Settings
+
+          data class ExecutionResult(
+              val actionId: String,
+              val executed: Boolean,
+              val message: String
+          )
+
+          class ActionExecutor(
+              private val context: Context
+          ) {
+
+              fun execute(action: OrionAction): ExecutionResult {
+
+                  return when (action.id) {
+
+                      "LOW_POWER_NOTICE",
+                      "BATTERY_ATTENTION" -> {
+
+                          val intent = Intent(
+                              Settings.ACTION_BATTERY_SAVER_SETTINGS
+                          ).apply {
+                              addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                          }
+
+                          return try {
+
+                              context.startActivity(intent)
+
+                              ExecutionResult(
+                                  actionId = action.id,
+                                  executed = true,
+                                  message =
+                                      "Battery settings opened."
+                              )
+
+                          } catch (error: Exception) {
+
+                              ExecutionResult(
+                                  actionId = action.id,
+                                  executed = false,
+                                  message =
+                                      "Unable to open battery settings."
+                              )
+                          }
+                      }
+
+                      "MONITOR" -> {
+
+                          ExecutionResult(
+                              actionId = action.id,
+                              executed = true,
+                              message =
+                                  "Normal monitoring continues."
+                          )
+                      }
+
+                      else -> {
+
+                          ExecutionResult(
+                              actionId = action.id,
+                              executed = false,
+                              message =
+                                  "Action not available."
+                          )
+                      }
+                  }
+              }
+          }
+          EOF
+
+      - name: Update MainActivity
+        shell: bash
+        run: |
+          set -eux
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path(
+              "android/app/src/main/java/com/orion/lite/MainActivity.kt"
+          )
+
+          text = path.read_text()
+
+          text = text.replace(
+              "val executor = ActionExecutor()",
+              "val executor = ActionExecutor(this)"
+          )
+
+          path.write_text(text)
+          PY
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          set -eux
+
+          ./gradlew :app:assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --console=plain
+
+      - name: Verify runtime foundation
+        shell: bash
+        run: |
+          set -eux
+
+          test -f android/app/src/main/java/com/orion/lite/orion/ActionExecutor.kt
+          test -f android/app/build/outputs/apk/debug/app-debug.apk
+
+          test ! -d android/app/src/test
+          test ! -d android/app/src/androidTest
+
+      - name: Commit
+        shell: bash
+        run: |
+          set -eux
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add android
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "feat: add real Android battery action"
+            git push
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORION-Lite-real-action
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
