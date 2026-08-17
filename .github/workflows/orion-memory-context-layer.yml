@@ -1,0 +1,258 @@
+name: ORION Memory Context Layer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  memory-context:
+    name: Build ORION Memory Context Layer
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Verify actual repository structure
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
+          CORE="android/app/src/main/java/com/orion/lite/orion/OrionCore.kt"
+          MEMORY="android/app/src/main/java/com/orion/lite/orion/OrionMemory.kt"
+          ROUTER="android/app/src/main/java/com/orion/lite/orion/ActionRouter.kt"
+          SAFETY="android/app/src/main/java/com/orion/lite/orion/SafetyPolicy.kt"
+          EXECUTOR="android/app/src/main/java/com/orion/lite/orion/ActionExecutor.kt"
+
+          test -f "$MAIN"
+          test -f "$CORE"
+          test -f "$MEMORY"
+          test -f "$ROUTER"
+          test -f "$SAFETY"
+          test -f "$EXECUTOR"
+
+          grep -Fq 'val previous = memory.recall()' "$MAIN"
+          grep -Fq 'fun analyze(device: DeviceState): OrionDecision' "$CORE"
+          grep -Fq 'data class MemoryRecord' "$MEMORY"
+          grep -Fq 'fun recall(): MemoryRecord?' "$MEMORY"
+
+          echo "Actual repository structure verified."
+
+      - name: Backup files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
+          CORE="android/app/src/main/java/com/orion/lite/orion/OrionCore.kt"
+
+          cp "$MAIN" "$MAIN.backup"
+          cp "$CORE" "$CORE.backup"
+
+          echo "Backups created."
+
+      - name: Apply Memory Context Layer
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
+          CORE="android/app/src/main/java/com/orion/lite/orion/OrionCore.kt"
+
+          python3 - "$MAIN" "$CORE" <<'PY'
+          import sys
+          from pathlib import Path
+
+          main_path = Path(sys.argv[1])
+          core_path = Path(sys.argv[2])
+
+          main = main_path.read_text()
+          core = core_path.read_text()
+
+          # ------------------------------------------------------------
+          # MainActivity: pass existing recalled MemoryRecord to Core
+          # ------------------------------------------------------------
+
+          old_main = "val decision = core.analyze(device)"
+
+          if old_main not in main:
+              raise SystemExit(
+                  "ERROR: expected 'core.analyze(device)' not found"
+              )
+
+          new_main = """val decision = core.analyze(
+                      device,
+                      previous
+                  )"""
+
+          main = main.replace(old_main, new_main, 1)
+
+          # ------------------------------------------------------------
+          # OrionCore: add MemoryRecord context parameter
+          # ------------------------------------------------------------
+
+          old_core = "fun analyze(device: DeviceState): OrionDecision {"
+
+          if old_core not in core:
+              raise SystemExit(
+                  "ERROR: expected OrionCore analyze signature not found"
+              )
+
+          new_core = """fun analyze(
+              device: DeviceState,
+              previous: MemoryRecord?
+          ): OrionDecision {"""
+
+          core = core.replace(old_core, new_core, 1)
+
+          main_path.write_text(main)
+          core_path.write_text(core)
+
+          print("Memory Context Layer applied successfully.")
+          PY
+
+      - name: Verify Memory Context
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
+          CORE="android/app/src/main/java/com/orion/lite/orion/OrionCore.kt"
+
+          grep -Fq 'val previous = memory.recall()' "$MAIN"
+          grep -Fq 'val decision = core.analyze(' "$MAIN"
+          grep -Fq 'previous' "$MAIN"
+
+          grep -Fq 'previous: MemoryRecord?' "$CORE"
+
+          test "$(grep -Fc 'previous: MemoryRecord?' "$CORE")" -eq 1
+          test "$(grep -Fc 'val previous = memory.recall()' "$MAIN")" -eq 1
+
+          echo "Memory Context verification passed."
+
+      - name: Verify protected layers were not modified
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MEMORY="android/app/src/main/java/com/orion/lite/orion/OrionMemory.kt"
+          ROUTER="android/app/src/main/java/com/orion/lite/orion/ActionRouter.kt"
+          SAFETY="android/app/src/main/java/com/orion/lite/orion/SafetyPolicy.kt"
+          EXECUTOR="android/app/src/main/java/com/orion/lite/orion/ActionExecutor.kt"
+
+          git diff --exit-code -- "$MEMORY"
+          git diff --exit-code -- "$ROUTER"
+          git diff --exit-code -- "$SAFETY"
+          git diff --exit-code -- "$EXECUTOR"
+
+          echo "Protected layers unchanged."
+
+      - name: Verify Recall remains before Observe
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
+
+          python3 - "$MAIN" <<'PY'
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text()
+
+          recall = text.find("val previous = memory.recall()")
+          observe = text.find("val device = monitor.read()")
+          decide = text.find("val decision = core.analyze(")
+
+          if recall < 0:
+              raise SystemExit("ERROR: Recall not found")
+
+          if observe < 0:
+              raise SystemExit("ERROR: Observe not found")
+
+          if decide < 0:
+              raise SystemExit("ERROR: Decide not found")
+
+          if not (recall < observe < decide):
+              raise SystemExit(
+                  "ERROR: Runtime order Recall -> Observe -> Decide is invalid"
+              )
+
+          print("Runtime order verified:")
+          print("Recall -> Observe -> Decide")
+          PY
+
+      - name: Verify no test directories
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test ! -d android/app/src/test
+          test ! -d android/app/src/androidTest
+
+          echo "No test directories found."
+
+      - name: Build Debug APK
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./gradlew :app:assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --console=plain
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+
+          test -f "$APK"
+
+          echo "APK verified:"
+          ls -lh "$APK"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: ORION-Lite-memory-context
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Commit Memory Context Layer
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            android/app/src/main/java/com/orion/lite/MainActivity.kt \
+            android/app/src/main/java/com/orion/lite/orion/OrionCore.kt
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "feat: add memory context to ORION decision"
+            git push
+          fi
