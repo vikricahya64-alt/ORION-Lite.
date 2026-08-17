@@ -1,4 +1,4 @@
-name: ORION Memory Context Layer
+name: ORION Recall Layer
 
 on:
   workflow_dispatch:
@@ -7,8 +7,8 @@ permissions:
   contents: write
 
 jobs:
-  memory-context:
-    name: Build ORION Memory Context Layer
+  recall:
+    name: Build ORION Recall Layer
     runs-on: ubuntu-latest
 
     steps:
@@ -28,175 +28,247 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
-      - name: Verify repository structure
+      - name: Verify OrionMemory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MEMORY="android/app/src/main/java/com/orion/lite/orion/OrionMemory.kt"
+
+          test -f "$MEMORY"
+          grep -Fq 'fun recall()' "$MEMORY"
+
+          echo "OrionMemory.recall() verified."
+
+      - name: Apply Recall Layer
         shell: bash
         run: |
           set -euo pipefail
 
           MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
-          CORE="android/app/src/main/java/com/orion/lite/orion/OrionCore.kt"
-          MEMORY="android/app/src/main/java/com/orion/lite/orion/OrionMemory.kt"
-          ROUTER="android/app/src/main/java/com/orion/lite/orion/ActionRouter.kt"
-          SAFETY="android/app/src/main/java/com/orion/lite/orion/SafetyPolicy.kt"
-          EXECUTOR="android/app/src/main/java/com/orion/lite/orion/ActionExecutor.kt"
 
           test -f "$MAIN"
-          test -f "$CORE"
-          test -f "$MEMORY"
-          test -f "$ROUTER"
-          test -f "$SAFETY"
-          test -f "$EXECUTOR"
-
-          grep -Fq 'fun recall()' "$MEMORY"
-          grep -Fq 'data class MemoryRecord' "$MEMORY"
-          grep -Fq 'fun analyze(' "$CORE"
-          grep -Fq 'core.analyze(device)' "$MAIN"
-
-          echo "Repository structure verified."
-
-      - name: Backup source files
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
-          CORE="android/app/src/main/java/com/orion/lite/orion/OrionCore.kt"
 
           cp "$MAIN" "$MAIN.backup"
-          cp "$CORE" "$CORE.backup"
 
-          echo "Source backups created."
+          echo "MainActivity backup created."
 
-      - name: Apply Memory Context Layer
-        shell: bash
-        run: |
-          set -euo pipefail
+          grep -Fq 'var action = remember {' "$MAIN"
+          grep -Fq 'LaunchedEffect(Unit)' "$MAIN"
+          grep -Fq 'val device = monitor.read()' "$MAIN"
+          grep -Fq '"Action: ${action.value}"' "$MAIN"
 
-          MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
-          CORE="android/app/src/main/java/com/orion/lite/orion/OrionCore.kt"
+          if grep -Fq 'val previous = memory.recall()' "$MAIN"; then
+            echo "Recall Layer already exists."
+            exit 0
+          fi
 
-          python3 - "$MAIN" "$CORE" <<'PY'
+          python3 - "$MAIN" <<'PY'
           import sys
           from pathlib import Path
 
-          main_path = Path(sys.argv[1])
-          core_path = Path(sys.argv[2])
-
-          main = main_path.read_text()
-          core = core_path.read_text()
+          path = Path(sys.argv[1])
+          text = path.read_text()
 
           # ============================================================
-          # MAINACTIVITY
+          # 1. Find complete Action state block
           # ============================================================
 
-          old_call = "core.analyze(device)"
+          marker = "var action = remember {"
+          start = text.find(marker)
 
-          if old_call not in main:
+          if start < 0:
+              raise SystemExit("ERROR: action state not found")
+
+          open_brace = text.find("{", start)
+
+          if open_brace < 0:
+              raise SystemExit("ERROR: action opening brace not found")
+
+          depth = 0
+          end = None
+
+          for i in range(open_brace, len(text)):
+              if text[i] == "{":
+                  depth += 1
+              elif text[i] == "}":
+                  depth -= 1
+
+                  if depth == 0:
+                      end = i + 1
+                      break
+
+          if end is None:
+              raise SystemExit("ERROR: action block is not balanced")
+
+          # ============================================================
+          # 2. Add Recall state after Action state
+          # ============================================================
+
+          recall_state = '''
+          
+              var recall = remember {
+                  mutableStateOf("No previous event.")
+              }'''
+
+          text = text[:end] + recall_state + text[end:]
+
+          # ============================================================
+          # 3. Add recall() before Observe
+          # ============================================================
+
+          effect = text.find("LaunchedEffect(Unit) {")
+
+          if effect < 0:
+              raise SystemExit("ERROR: LaunchedEffect(Unit) not found")
+
+          observe = text.find("val device = monitor.read()", effect)
+
+          if observe < 0:
+              raise SystemExit("ERROR: monitor.read() not found")
+
+          recall_logic = '''
+          
+                  val previous = memory.recall()
+
+                  recall.value = if (previous != null) {
+                      "Previous: ${previous.state} | Battery: ${previous.battery}% | Action: ${previous.actionId} | Result: ${previous.result}"
+                  } else {
+                      "No previous event."
+                  }
+
+          '''
+
+          text = text[:observe] + recall_logic + text[observe:]
+
+          # ============================================================
+          # 4. Find Action UI using the Action string only
+          # ============================================================
+
+          action_string = '"Action: ${action.value}"'
+          string_pos = text.find(action_string)
+
+          if string_pos < 0:
+              raise SystemExit("ERROR: Action UI string not found")
+
+          text_call = text.rfind("Text(", 0, string_pos)
+
+          if text_call < 0:
+              raise SystemExit("ERROR: Action Text call not found")
+
+          # ============================================================
+          # 5. Find closing parenthesis of Text(...)
+          # ============================================================
+
+          depth = 0
+          text_end = None
+
+          for i in range(text_call, len(text)):
+              char = text[i]
+
+              if char == "(":
+                  depth += 1
+
+              elif char == ")":
+                  depth -= 1
+
+                  if depth == 0:
+                      text_end = i + 1
+                      break
+
+          if text_end is None:
               raise SystemExit(
-                  "ERROR: expected core.analyze(device) call not found"
+                  "ERROR: Action Text parenthesis is not balanced"
               )
 
-          new_call = """core.analyze(
-                      device,
-                      previous
-                  )"""
-
-          main = main.replace(old_call, new_call, 1)
-
-          # ============================================================
-          # ORIONCORE
-          # ============================================================
-
-          old_signature = """fun analyze(device: DeviceState): OrionDecision {"""
-
-          if old_signature not in core:
+          if action_string not in text[text_call:text_end]:
               raise SystemExit(
-                  "ERROR: expected OrionCore analyze signature not found"
+                  "ERROR: Located Text call does not contain Action string"
               )
-
-          new_signature = """fun analyze(
-              device: DeviceState,
-              previous: MemoryRecord?
-          ): OrionDecision {"""
-
-          core = core.replace(old_signature, new_signature, 1)
 
           # ============================================================
-          # Add MemoryRecord import if necessary
+          # 6. Insert Recall UI after Action Text
           # ============================================================
 
-          if "MemoryRecord" not in core:
-              raise SystemExit(
-                  "ERROR: MemoryRecord reference could not be established"
-              )
+          recall_ui = '''
+          
+                    Text(
+                        text =
+                            "Recall: ${recall.value}",
+                        modifier =
+                            Modifier.padding(top = 8.dp)
+                    )'''
 
-          if (
-              "import com.orion.lite.orion.MemoryRecord" not in core
-              and "MemoryRecord" in core
-          ):
-              package_end = core.find("\n", core.find("package "))
+          text = text[:text_end] + recall_ui + text[text_end:]
 
-              if package_end == -1:
-                  raise SystemExit(
-                      "ERROR: package declaration not found"
-                  )
+          # ============================================================
+          # 7. Write
+          # ============================================================
 
-              core = (
-                  core[:package_end + 1]
-                  + "\nimport com.orion.lite.orion.MemoryRecord"
-                  + core[package_end + 1:]
-              )
+          path.write_text(text)
 
-          main_path.write_text(main)
-          core_path.write_text(core)
-
-          print("Memory Context Layer transformation completed.")
+          print("Recall Layer source transformation completed.")
           PY
 
-      - name: Verify Memory Context source
+          echo "Checking generated Kotlin structure..."
+
+          grep -Fq 'var recall = remember {' "$MAIN"
+          grep -Fq 'val previous = memory.recall()' "$MAIN"
+          grep -Fq '"Recall: ${recall.value}"' "$MAIN"
+
+          test "$(grep -Fc 'var recall = remember {' "$MAIN")" -eq 1
+          test "$(grep -Fc 'val previous = memory.recall()' "$MAIN")" -eq 1
+          test "$(grep -Fc '"Recall: ${recall.value}"' "$MAIN")" -eq 1
+
+          echo "Recall Layer source verification passed."
+
+      - name: Verify Recall placement
         shell: bash
         run: |
           set -euo pipefail
 
           MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
-          CORE="android/app/src/main/java/com/orion/lite/orion/OrionCore.kt"
 
-          grep -Fq 'val previous = memory.recall()' "$MAIN"
-          grep -Fq 'core.analyze(' "$MAIN"
-          grep -Fq 'device,' "$MAIN"
-          grep -Fq 'previous' "$MAIN"
+          python3 - "$MAIN" <<'PY'
+          import sys
+          from pathlib import Path
 
-          grep -Fq 'previous: MemoryRecord?' "$CORE"
+          text = Path(sys.argv[1]).read_text()
 
-          echo "Memory Context source verification passed."
+          action = text.find("var action = remember {")
+          recall_state = text.find("var recall = remember {")
+          effect = text.find("LaunchedEffect(Unit) {")
+          recall_logic = text.find("val previous = memory.recall()")
+          observe = text.find("val device = monitor.read()")
+          recall_ui = text.find('"Recall: ${recall.value}"')
 
-      - name: Verify protected layers unchanged
-        shell: bash
-        run: |
-          set -euo pipefail
+          checks = {
+              "Action exists": action >= 0,
+              "Recall state exists": recall_state >= 0,
+              "Recall after Action": recall_state > action,
+              "LaunchedEffect exists": effect >= 0,
+              "Recall logic exists": recall_logic >= 0,
+              "Recall before Observe": (
+                  recall_logic >= 0
+                  and observe >= 0
+                  and recall_logic < observe
+              ),
+              "Recall UI exists": recall_ui >= 0,
+          }
 
-          ROUTER="android/app/src/main/java/com/orion/lite/orion/ActionRouter.kt"
-          SAFETY="android/app/src/main/java/com/orion/lite/orion/SafetyPolicy.kt"
-          EXECUTOR="android/app/src/main/java/com/orion/lite/orion/ActionExecutor.kt"
+          for name, result in checks.items():
+              print(
+                  f"{name}: "
+                  f"{'OK' if result else 'FAIL'}"
+              )
 
-          git diff --exit-code -- "$ROUTER"
-          git diff --exit-code -- "$SAFETY"
-          git diff --exit-code -- "$EXECUTOR"
+          if not all(checks.values()):
+              raise SystemExit(
+                  "ERROR: Recall placement verification failed"
+              )
 
-          echo "ActionRouter unchanged."
-          echo "SafetyPolicy unchanged."
-          echo "ActionExecutor unchanged."
-
-      - name: Verify Memory implementation unchanged
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          MEMORY="android/app/src/main/java/com/orion/lite/orion/OrionMemory.kt"
-
-          git diff --exit-code -- "$MEMORY"
-
-          echo "OrionMemory storage implementation unchanged."
+          print("Recall placement verification passed.")
+          PY
 
       - name: Verify no test directories
         shell: bash
@@ -234,11 +306,11 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v5
         with:
-          name: ORION-Lite-memory-context
+          name: ORION-Lite-recall
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      - name: Commit Memory Context Layer
+      - name: Commit Recall Layer
         shell: bash
         run: |
           set -euo pipefail
@@ -246,13 +318,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add \
-            android/app/src/main/java/com/orion/lite/MainActivity.kt \
-            android/app/src/main/java/com/orion/lite/orion/OrionCore.kt
+          git add android/app/src/main/java/com/orion/lite/MainActivity.kt
 
           if git diff --cached --quiet; then
-            echo "No Memory Context changes to commit."
+            echo "No Recall changes to commit."
           else
-            git commit -m "feat: add memory context to ORION decision"
+            git commit -m "feat: add ORION recall layer"
             git push
           fi
