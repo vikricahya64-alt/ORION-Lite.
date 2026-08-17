@@ -1,18 +1,27 @@
-name: ORION Android Build
+name: ORION Android CI
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
       - master
+    paths:
+      - "android/**"
+      - ".github/workflows/orion-build.yml"
+
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/orion-build.yml"
+
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   android:
-    name: Test and Build APK
+    name: Android Test and Build
     runs-on: ubuntu-latest
 
     defaults:
@@ -32,68 +41,28 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: "8.10.2"
-
-      - name: Generate Gradle Wrapper
+      - name: Validate Gradle Wrapper
         run: |
           set -eux
 
-          gradle wrapper \
-            --gradle-version 8.10.2 \
-            --distribution-type bin
-
-          chmod +x gradlew
-
-      - name: Validate Android project
-        run: |
-          set -eux
-
-          test -d app
-          test -f settings.gradle.kts
-          test -f build.gradle.kts
           test -f gradlew
           test -f gradle/wrapper/gradle-wrapper.properties
 
-          echo "Android project structure: OK"
+          chmod +x gradlew
+
+          echo "Gradle Wrapper: OK"
 
       - name: Show environment
         run: |
-          set -eux
-
           java -version
           ./gradlew --version
 
-      - name: Run Android unit tests
-        id: unit_tests
-        continue-on-error: true
+      - name: Run unit tests
         run: |
           ./gradlew :app:testDebugUnitTest \
             --no-daemon \
             --stacktrace \
-            --info \
-            --console=plain \
-            2>&1 | tee unit-test.log
-
-      - name: Upload test diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ORION-unit-test-diagnostics
-          path: |
-            android/unit-test.log
-            android/app/build/reports/tests/
-            android/app/build/test-results/
-          if-no-files-found: warn
-
-      - name: Stop if unit tests failed
-        if: steps.unit_tests.outcome == 'failure'
-        run: |
-          echo "Unit tests failed."
-          echo "See ORION-unit-test-diagnostics artifact."
-          exit 1
+            --console=plain
 
       - name: Build debug APK
         run: |
@@ -102,16 +71,21 @@ jobs:
             --stacktrace \
             --console=plain
 
-      - name: Find APK
+      - name: Verify APK
         run: |
-          find app/build/outputs \
-            -type f \
-            -name "*.apk" \
-            -print
+          set -eux
+
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          test -f "$APK"
+
+          ls -lh "$APK"
+
+          echo "APK verified."
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ORION-Lite-debug
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
