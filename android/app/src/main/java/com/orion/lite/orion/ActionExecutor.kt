@@ -1,44 +1,73 @@
 package com.orion.lite.orion
 
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
+
 data class ExecutionResult(
     val actionId: String,
     val executed: Boolean,
     val message: String
 )
 
-class ActionExecutor {
+class ActionExecutor(
+    private val context: Context
+) {
 
     fun execute(action: OrionAction): ExecutionResult {
 
         return when (action.id) {
 
-            "LOW_POWER_NOTICE" ->
-                ExecutionResult(
-                    action.id,
-                    true,
-                    action.description
-                )
+            "LOW_POWER_NOTICE",
+            "BATTERY_ATTENTION" -> {
 
-            "BATTERY_ATTENTION" ->
-                ExecutionResult(
-                    action.id,
-                    true,
-                    action.description
-                )
+                val intent = Intent(
+                    Settings.ACTION_BATTERY_SAVER_SETTINGS
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
 
-            "MONITOR" ->
-                ExecutionResult(
-                    action.id,
-                    true,
-                    action.description
-                )
+                return try {
 
-            else ->
+                    context.startActivity(intent)
+
+                    ExecutionResult(
+                        actionId = action.id,
+                        executed = true,
+                        message =
+                            "Battery settings opened."
+                    )
+
+                } catch (error: Exception) {
+
+                    ExecutionResult(
+                        actionId = action.id,
+                        executed = false,
+                        message =
+                            "Unable to open battery settings."
+                    )
+                }
+            }
+
+            "MONITOR" -> {
+
                 ExecutionResult(
-                    action.id,
-                    false,
-                    "Action not available."
+                    actionId = action.id,
+                    executed = true,
+                    message =
+                        "Normal monitoring continues."
                 )
+            }
+
+            else -> {
+
+                ExecutionResult(
+                    actionId = action.id,
+                    executed = false,
+                    message =
+                        "Action not available."
+                )
+            }
         }
     }
 }

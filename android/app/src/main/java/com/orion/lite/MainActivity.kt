@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
         val monitor = DeviceMonitor(this)
         val core = OrionCore()
         val router = ActionRouter()
-        val executor = ActionExecutor()
+        val executor = ActionExecutor(this)
 
         kernel.register("device_monitor", monitor)
         kernel.register("core", core)
