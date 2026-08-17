@@ -9,9 +9,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.orion.lite.orion.ActionExecutor
+import com.orion.lite.orion.ActionRouter
 import com.orion.lite.orion.DeviceMonitor
 import com.orion.lite.orion.OrionCore
 import com.orion.lite.orion.OrionKernel
@@ -24,20 +28,28 @@ class MainActivity : ComponentActivity() {
         val kernel = OrionKernel()
         val monitor = DeviceMonitor(this)
         val core = OrionCore()
+        val router = ActionRouter()
+        val executor = ActionExecutor()
 
         kernel.register("device_monitor", monitor)
         kernel.register("core", core)
+        kernel.register("action_router", router)
+        kernel.register("action_executor", executor)
 
         kernel.boot()
 
         setContent {
 
-            var state by remember {
+            var state = remember {
                 mutableStateOf("BOOTING")
             }
 
-            var message by remember {
-                mutableStateOf("ORION starting...")
+            var battery = remember {
+                mutableStateOf(-1)
+            }
+
+            var action = remember {
+                mutableStateOf("Starting...")
             }
 
             LaunchedEffect(Unit) {
@@ -46,10 +58,12 @@ class MainActivity : ComponentActivity() {
 
                 val device = monitor.read()
                 val decision = core.analyze(device)
+                val routedAction = router.route(decision)
+                val result = executor.execute(routedAction)
 
-                state = decision.state
-                message =
-                    "${decision.message}\nBattery: ${device.batteryPercent}%"
+                battery.value = device.batteryPercent
+                state.value = decision.state
+                action.value = result.message
             }
 
             MaterialTheme {
@@ -80,13 +94,19 @@ class MainActivity : ComponentActivity() {
                     )
 
                     Text(
-                        text = "State: $state",
+                        text = "State: ${state.value}",
                         modifier =
                             Modifier.padding(top = 8.dp)
                     )
 
                     Text(
-                        text = message,
+                        text = "Battery: ${battery.value}%",
+                        modifier =
+                            Modifier.padding(top = 8.dp)
+                    )
+
+                    Text(
+                        text = "Action: ${action.value}",
                         modifier =
                             Modifier.padding(top = 8.dp)
                     )
