@@ -7,12 +7,12 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  recall:
     name: Build ORION Recall Layer
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -23,171 +23,178 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.10.2"
 
-      - name: Verify Memory Layer
+      - name: Verify OrionMemory
         shell: bash
         run: |
-          set -eux
+          set -e
 
-          MEMORY_FILE="android/app/src/main/java/com/orion/lite/orion/OrionMemory.kt"
+          MEMORY="android/app/src/main/java/com/orion/lite/orion/OrionMemory.kt"
 
-          test -f "$MEMORY_FILE"
+          test -f "$MEMORY"
+          grep -q "fun recall()" "$MEMORY"
 
-          grep -q "fun recall()" "$MEMORY_FILE"
+          echo "OrionMemory recall() OK"
 
-          echo "OrionMemory recall() verified."
-
-      - name: Update MainActivity with Recall Layer
+      - name: Apply Recall Layer
         shell: bash
         run: |
-          set -eux
+          set -e
 
-          python3 - <<'PY'
+          MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
+
+          test -f "$MAIN"
+
+          python3 - "$MAIN" <<'PY'
           from pathlib import Path
+          import sys
 
-          path = Path(
-              "android/app/src/main/java/com/orion/lite/MainActivity.kt"
-          )
-
+          path = Path(sys.argv[1])
           text = path.read_text()
 
-          # ------------------------------------------------------------
+          # ---------------------------------------------------------
           # 1. Add recall state
-          # ------------------------------------------------------------
+          # ---------------------------------------------------------
 
-          old = '''            var action = remember {
-                  mutableStateOf("Starting...")
-              }
-          '''
+          if "var recall = remember" not in text:
 
-          new = '''            var action = remember {
-                  mutableStateOf("Starting...")
-              }
+              marker = 'var action = remember {'
+
+              if marker not in text:
+                  raise SystemExit(
+                      "ERROR: action state marker not found"
+                  )
+
+              start = text.index(marker)
+
+              # Find the end of the action remember block.
+              end = text.find("}", start)
+
+              if end == -1:
+                  raise SystemExit(
+                      "ERROR: action state block not found"
+                  )
+
+              end += 1
+
+              insertion = """
 
               var recall = remember {
                   mutableStateOf("No previous event.")
-              }
-          '''
+              }"""
 
-          if "var recall = remember" not in text:
-              if old not in text:
-                  raise SystemExit(
-                      "ERROR: Could not find action state block."
-                  )
+              text = text[:end] + insertion + text[end:]
 
-              text = text.replace(old, new, 1)
-
-          # ------------------------------------------------------------
-          # 2. Recall previous memory at START
-          # ------------------------------------------------------------
-
-          old = '''            LaunchedEffect(Unit) {
-
-                kernel.heartbeat()
-
-                val device = monitor.read()
-          '''
-
-          new = '''            LaunchedEffect(Unit) {
-
-                val previous = memory.recall()
-
-                recall.value =
-                    if (previous != null) {
-                        "Previous: ${previous.state} | " +
-                            "Battery: ${previous.battery}% | " +
-                            "Action: ${previous.actionId} | " +
-                            "Result: ${previous.result}"
-                    } else {
-                        "No previous event."
-                    }
-
-                kernel.heartbeat()
-
-                val device = monitor.read()
-          '''
+          # ---------------------------------------------------------
+          # 2. Add recall at runtime start
+          # ---------------------------------------------------------
 
           if "val previous = memory.recall()" not in text:
-              if old not in text:
+
+              marker = "LaunchedEffect(Unit) {"
+
+              if marker not in text:
                   raise SystemExit(
-                      "ERROR: Could not find runtime start block."
+                      "ERROR: LaunchedEffect(Unit) not found"
                   )
 
-              text = text.replace(old, new, 1)
+              insertion = """LaunchedEffect(Unit) {
 
-          # ------------------------------------------------------------
-          # 3. Display recalled event
-          # ------------------------------------------------------------
+                  val previous = memory.recall()
 
-          old = '''                    Text(
+                  recall.value =
+                      if (previous != null) {
+                          "Previous: ${previous.state} | " +
+                              "Battery: ${previous.battery}% | " +
+                              "Action: ${previous.actionId} | " +
+                              "Result: ${previous.result}"
+                      } else {
+                          "No previous event."
+                      }
+          """
+
+              text = text.replace(
+                  marker,
+                  insertion,
+                  1
+              )
+
+          # ---------------------------------------------------------
+          # 3. Add Recall display
+          # ---------------------------------------------------------
+
+          if '"Recall: ${recall.value}"' not in text:
+
+              marker = '"Action: ${action.value}"'
+
+              if marker not in text:
+                  raise SystemExit(
+                      "ERROR: Action display marker not found"
+                  )
+
+              target = """                    Text(
                         text =
                             "Action: ${action.value}",
                         modifier =
                             Modifier.padding(top = 8.dp)
-                    )
-'''
+                    )"""
 
-          new = '''                    Text(
-                        text =
-                            "Action: ${action.value}",
-                        modifier =
-                            Modifier.padding(top = 8.dp)
-                    )
+              if target not in text:
+                  raise SystemExit(
+                      "ERROR: Action Text block not found"
+                  )
+
+              replacement = target + """
 
                     Text(
                         text =
                             "Recall: ${recall.value}",
                         modifier =
                             Modifier.padding(top = 8.dp)
-                    )
-'''
+                    )"""
 
-          if 'text =\n                            "Recall: ${recall.value}"' not in text:
-              if old not in text:
-                  raise SystemExit(
-                      "ERROR: Could not find Action UI block."
-                  )
-
-              text = text.replace(old, new, 1)
+              text = text.replace(
+                  target,
+                  replacement,
+                  1
+              )
 
           path.write_text(text)
 
-          print("MainActivity Recall Layer update completed.")
+          print("Recall Layer applied successfully.")
           PY
 
-      - name: Verify Recall Integration
+      - name: Verify Recall Layer
         shell: bash
         run: |
-          set -eux
+          set -e
 
-          MAIN_FILE="android/app/src/main/java/com/orion/lite/MainActivity.kt"
+          MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
 
-          test -f "$MAIN_FILE"
+          grep -q "val previous = memory.recall()" "$MAIN"
+          grep -q "var recall = remember" "$MAIN"
+          grep -q '"Recall: ${recall.value}"' "$MAIN"
 
-          grep -q "val previous = memory.recall()" "$MAIN_FILE"
-          grep -q 'mutableStateOf("No previous event.")' "$MAIN_FILE"
-          grep -q '"Recall: ${recall.value}"' "$MAIN_FILE"
+          echo "Recall Layer verification OK"
 
-          echo "Recall integration verified."
-
-      - name: Verify No Test Foundation
+      - name: Verify no test directories
         shell: bash
         run: |
-          set -eux
+          set -e
 
           test ! -d android/app/src/test
           test ! -d android/app/src/androidTest
 
-          echo "No test/ or androidTest/ directory found."
+          echo "No test directories found."
 
-      - name: Build APK
+      - name: Build Debug APK
         working-directory: android
         run: |
-          set -eux
+          set -e
 
           ./gradlew :app:assembleDebug \
             --no-daemon \
@@ -197,13 +204,13 @@ jobs:
       - name: Verify APK
         shell: bash
         run: |
-          set -eux
+          set -e
 
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
 
           test -f "$APK"
 
-          echo "APK verified:"
+          echo "APK successfully created:"
           ls -lh "$APK"
 
       - name: Upload APK
@@ -216,17 +223,16 @@ jobs:
       - name: Commit Recall Layer
         shell: bash
         run: |
-          set -eux
+          set -e
 
           git config user.name "github-actions[bot]"
-          git config user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add \
-            android/app/src/main/java/com/orion/lite/MainActivity.kt
+          git add android/app/src/main/java/com/orion/lite/MainActivity.kt
 
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No Recall changes to commit."
           else
             git commit -m "feat: add ORION recall layer"
             git push
+          fi
