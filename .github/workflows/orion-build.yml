@@ -41,12 +41,47 @@ jobs:
             --include='*.java' \
             || true
 
+          echo "=== MAIN ACTIVITY FILES ==="
+          find app/src/main -type f \
+            \( -name "MainActivity.kt" -o -name "MainActivity.java" \) \
+            -print
+
+          echo "=== MAIN ACTIVITY CONTENT ==="
+          for f in $(find app/src/main -type f \
+            \( -name "MainActivity.kt" -o -name "MainActivity.java" \)); do
+            echo "--- $f ---"
+            sed -n '1,260p' "$f"
+          done
+
+          echo "=== STYLES FILES ==="
+          find app/src/main/res \
+            -type f \
+            -path '*/values/styles.xml' \
+            -print
+
+          echo "=== STYLES CONTENT ==="
+          for f in $(find app/src/main/res \
+            -type f \
+            -path '*/values/styles.xml'); do
+            echo "--- $f ---"
+            sed -n '1,260p' "$f"
+          done
+
+          echo "=== COMPOSE / UI SOURCES ==="
+          grep -RniE "@Composable|setContent[[:space:]]*\{|Text\(|Column\(|Row\(|Surface\(|Scaffold\(" app/src/main \
+            --include='*.kt' \
+            --include='*.java' \
+            || true
+
           echo "=== MANIFEST ==="
           find app/src/main -name "AndroidManifest.xml" \
             -exec sed -n '1,240p' {} \;
 
           echo "=== LAYOUTS ==="
-          find app/src/main/res -type f -name "*.xml" -print
+          find app/src/main/res \
+            -type f \
+            -name "*.xml" \
+            -print
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
