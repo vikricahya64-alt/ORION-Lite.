@@ -1,0 +1,178 @@
+name: ORION Foundation Reset
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reset:
+    name: Clean and Normalize Foundation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Audit BEFORE cleanup
+        shell: bash
+        run: |
+          set -eux
+
+          echo "=== ROOT ==="
+          pwd
+          find . -maxdepth 2 -type f | sort
+
+          echo
+          echo "=== ANDROID ==="
+          find android -maxdepth 4 -type f 2>/dev/null | sort || true
+
+          echo
+          echo "=== WORKFLOWS ==="
+          find .github android/.github -type f 2>/dev/null | sort || true
+
+      - name: Validate Android source of truth
+        shell: bash
+        run: |
+          set -eux
+
+          test -d android
+          test -d android/app
+          test -f android/settings.gradle.kts
+          test -f android/build.gradle.kts
+          test -f android/app/build.gradle.kts
+
+          echo "Android source of truth: OK"
+
+      - name: Remove obsolete Android workflow tree
+        shell: bash
+        run: |
+          set -eux
+
+          rm -rf android/.github
+
+          echo "Nested Android workflow removed."
+
+      - name: Remove historical and generated artifacts
+        shell: bash
+        run: |
+          set -eux
+
+          # Runtime/generated artifacts
+          rm -rf logs
+          rm -rf .pytest_cache
+          rm -rf .mypy_cache
+          rm -rf .ruff_cache
+
+          find . -type d \
+            \( \
+              -name "__pycache__" \
+              -o -name ".gradle" \
+              -o -name "build" \
+            \) \
+            -prune \
+            -exec rm -rf {} +
+
+          find . -type f \
+            \( \
+              -name "*.log" \
+              -o -name "*.tmp" \
+              -o -name "*.bak" \
+              -name "*.pyc" \
+            \) \
+            -delete
+
+          rm -f jobs.json
+          rm -f orion_state.json
+
+      - name: Remove historical source copies
+        shell: bash
+        run: |
+          set -eux
+
+          find . -type f \
+            \( \
+              -name "*.before_*" \
+              -o -name "*_backup.py" \
+              -o -name "*_backup_before_*.py" \
+              -o -name "*_old_backup.py" \
+              -o -name "*_error_backup.py" \
+              -o -name "*.py.backup" \
+              -o -name "*.p" \
+            \) \
+            -delete
+
+          rm -rf backups
+
+      - name: Remove obsolete Android ZIP
+        shell: bash
+        run: |
+          set -eux
+
+          test -d android/app
+          test -f android/settings.gradle.kts
+          test -f android/build.gradle.kts
+
+          rm -f ORION-Android-Foundation-v0.1.zip
+
+          echo "Obsolete Android ZIP removed."
+
+      - name: Remove temporary bootstrap and cleanup workflows
+        shell: bash
+        run: |
+          set -eux
+
+          rm -f .github/workflows/bootstrap-gradle-wrapper.yml
+          rm -f .github/workflows/cleanup-phase1.yml
+
+      - name: Final foundation validation
+        shell: bash
+        run: |
+          set -eux
+
+          echo "=== ANDROID ==="
+
+          test -d android
+          test -d android/app
+          test -f android/settings.gradle.kts
+          test -f android/build.gradle.kts
+          test -f android/app/build.gradle.kts
+
+          echo
+          echo "=== NO NESTED WORKFLOW ==="
+
+          test ! -d android/.github
+
+          echo
+          echo "=== NO OBSOLETE ZIP ==="
+
+          test ! -f ORION-Android-Foundation-v0.1.zip
+
+          echo
+          echo "=== FINAL TREE ==="
+
+          find . -maxdepth 3 -type f | sort
+
+          echo
+          echo "FOUNDATION RESET: PASSED"
+
+      - name: Commit foundation reset
+        shell: bash
+        run: |
+          set -eux
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No cleanup changes."
+            exit 0
+          fi
+
+          git commit -m "chore: reset and normalize ORION foundation"
+          git push
