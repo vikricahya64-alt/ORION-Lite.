@@ -1,0 +1,611 @@
+name: ORION Foundation Rebuild
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    name: Reset and Rebuild ORION Foundation
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # =========================================================
+      # 1. CHECKOUT
+      # =========================================================
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+
+      # =========================================================
+      # 2. REMOVE OLD ANDROID FOUNDATION
+      # =========================================================
+      - name: Remove legacy Android foundation
+        shell: bash
+        run: |
+          set -eux
+
+          rm -rf android
+
+          rm -f ORION-Android-Foundation-v0.1.zip
+
+          echo "Legacy Android foundation removed."
+
+
+      # =========================================================
+      # 3. REMOVE OLD TEST / TESTING FILES
+      # =========================================================
+      - name: Remove legacy testing files
+        shell: bash
+        run: |
+          set -eux
+
+          find . \
+            -type f \
+            \( \
+              -name '*Test.kt' \
+              -o -name '*Tests.kt' \
+              -o -name '*Test.java' \
+              -o -name '*Tests.java' \
+            \) \
+            -not -path './.git/*' \
+            -delete
+
+          find . \
+            -type d \
+            \( \
+              -path '*/src/test' \
+              -o -path '*/src/androidTest' \
+            \) \
+            -not -path './.git/*' \
+            -prune \
+            -exec rm -rf {} +
+
+          echo "Legacy testing files removed."
+
+
+      # =========================================================
+      # 4. REMOVE TEMPORARY FOUNDATION WORKFLOWS
+      # =========================================================
+      - name: Remove temporary workflows
+        shell: bash
+        run: |
+          set -eux
+
+          rm -f .github/cleanup-phase1.yml
+
+          rm -f .github/workflows/bootstrap-gradle-wrapper.yml
+          rm -f .github/workflows/foundation-audit.yml
+          rm -f .github/workflows/foundation-reset.yml
+          rm -f .github/workflows/cleanup-phase1.yml
+
+          echo "Temporary workflows removed."
+
+
+      # =========================================================
+      # 5. CREATE NEW ANDROID STRUCTURE
+      # =========================================================
+      - name: Create ORION Android foundation
+        shell: bash
+        run: |
+          set -eux
+
+          mkdir -p android/app/src/main/java/com/orion/lite/orion
+          mkdir -p android/app/src/main/res/values
+
+          echo "New ORION Android structure created."
+
+
+      # =========================================================
+      # 6. SETTINGS
+      # =========================================================
+      - name: Create settings.gradle.kts
+        shell: bash
+        run: |
+          cat > android/settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "ORION-Lite-Android"
+          include(":app")
+          EOF
+
+
+      # =========================================================
+      # 7. ROOT BUILD
+      # =========================================================
+      - name: Create root build.gradle.kts
+        shell: bash
+        run: |
+          cat > android/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.6.1" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+          }
+          EOF
+
+
+      # =========================================================
+      # 8. GRADLE PROPERTIES
+      # =========================================================
+      - name: Create gradle.properties
+        shell: bash
+        run: |
+          cat > android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          EOF
+
+
+      # =========================================================
+      # 9. APP BUILD
+      # =========================================================
+      - name: Create Android app build
+        shell: bash
+        run: |
+          cat > android/app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
+          }
+
+          android {
+              namespace = "com.orion.lite"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "com.orion.lite"
+                  minSdk = 26
+                  targetSdk = 35
+                  versionCode = 1
+                  versionName = "0.1.0"
+              }
+
+              buildFeatures {
+                  compose = true
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+
+          dependencies {
+              implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+              implementation("androidx.activity:activity-compose:1.10.0")
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-tooling-preview")
+              implementation("androidx.compose.material3:material3")
+          }
+          EOF
+
+
+      # =========================================================
+      # 10. MANIFEST
+      # =========================================================
+      - name: Create Android manifest
+        shell: bash
+        run: |
+          cat > android/app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.BATTERY_STATS" />
+
+              <application
+                  android:allowBackup="false"
+                  android:label="ORION Lite"
+                  android:supportsRtl="true">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+
+          </manifest>
+          EOF
+
+
+      # =========================================================
+      # 11. ORION KERNEL
+      # =========================================================
+      - name: Create ORION Kernel
+        shell: bash
+        run: |
+          cat > android/app/src/main/java/com/orion/lite/orion/OrionKernel.kt <<'EOF'
+          package com.orion.lite.orion
+
+          class OrionKernel {
+
+              private val services = mutableMapOf<String, Any>()
+
+              var running: Boolean = false
+                  private set
+
+              var cycle: Long = 0
+                  private set
+
+              fun register(name: String, service: Any) {
+                  services[name] = service
+              }
+
+              fun resolve(name: String): Any? {
+                  return services[name]
+              }
+
+              fun boot() {
+                  running = true
+              }
+
+              fun heartbeat() {
+                  if (running) {
+                      cycle++
+                  }
+              }
+
+              fun shutdown() {
+                  running = false
+              }
+
+              fun serviceNames(): List<String> {
+                  return services.keys.toList()
+              }
+          }
+          EOF
+
+
+      # =========================================================
+      # 12. DEVICE MONITOR
+      # =========================================================
+      - name: Create Device Monitor
+        shell: bash
+        run: |
+          cat > android/app/src/main/java/com/orion/lite/orion/DeviceMonitor.kt <<'EOF'
+          package com.orion.lite.orion
+
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.os.BatteryManager
+
+          data class DeviceState(
+              val batteryPercent: Int,
+              val charging: Boolean
+          )
+
+          class DeviceMonitor(
+              private val context: Context
+          ) {
+
+              fun read(): DeviceState {
+
+                  val intent = context.registerReceiver(
+                      null,
+                      IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+                  )
+
+                  if (intent == null) {
+                      return DeviceState(
+                          batteryPercent = -1,
+                          charging = false
+                      )
+                  }
+
+                  val level = intent.getIntExtra(
+                      BatteryManager.EXTRA_LEVEL,
+                      -1
+                  )
+
+                  val scale = intent.getIntExtra(
+                      BatteryManager.EXTRA_SCALE,
+                      -1
+                  )
+
+                  val status = intent.getIntExtra(
+                      BatteryManager.EXTRA_STATUS,
+                      -1
+                  )
+
+                  val percent =
+                      if (level >= 0 && scale > 0) {
+                          (level * 100) / scale
+                      } else {
+                          -1
+                      }
+
+                  val charging =
+                      status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                      status == BatteryManager.BATTERY_STATUS_FULL
+
+                  return DeviceState(
+                      batteryPercent = percent,
+                      charging = charging
+                  )
+              }
+          }
+          EOF
+
+
+      # =========================================================
+      # 13. ORION CORE
+      # =========================================================
+      - name: Create ORION Core
+        shell: bash
+        run: |
+          cat > android/app/src/main/java/com/orion/lite/orion/OrionCore.kt <<'EOF'
+          package com.orion.lite.orion
+
+          data class OrionDecision(
+              val state: String,
+              val message: String
+          )
+
+          class OrionCore {
+
+              fun analyze(device: DeviceState): OrionDecision {
+
+                  return when {
+                      device.batteryPercent < 0 ->
+                          OrionDecision(
+                              "UNKNOWN",
+                              "Battery information unavailable"
+                          )
+
+                      device.batteryPercent <= 20 ->
+                          OrionDecision(
+                              "LOW_POWER",
+                              "Battery low"
+                          )
+
+                      device.batteryPercent <= 50 ->
+                          OrionDecision(
+                              "ATTENTION",
+                              "Battery needs attention"
+                          )
+
+                      else ->
+                          OrionDecision(
+                              "NORMAL",
+                              "System operating normally"
+                          )
+                  }
+              }
+          }
+          EOF
+
+
+      # =========================================================
+      # 14. REAL ANDROID RUNTIME UI
+      # =========================================================
+      - name: Create MainActivity
+        shell: bash
+        run: |
+          cat > android/app/src/main/java/com/orion/lite/MainActivity.kt <<'EOF'
+          package com.orion.lite
+
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.Text
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.unit.dp
+          import com.orion.lite.orion.DeviceMonitor
+          import com.orion.lite.orion.OrionCore
+          import com.orion.lite.orion.OrionKernel
+
+          class MainActivity : ComponentActivity() {
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val kernel = OrionKernel()
+                  val monitor = DeviceMonitor(this)
+                  val core = OrionCore()
+
+                  kernel.register("device_monitor", monitor)
+                  kernel.register("core", core)
+
+                  kernel.boot()
+
+                  setContent {
+
+                      var state by remember {
+                          mutableStateOf("BOOTING")
+                      }
+
+                      var message by remember {
+                          mutableStateOf("ORION starting...")
+                      }
+
+                      LaunchedEffect(Unit) {
+
+                          kernel.heartbeat()
+
+                          val device = monitor.read()
+                          val decision = core.analyze(device)
+
+                          state = decision.state
+                          message =
+                              "${decision.message}\nBattery: ${device.batteryPercent}%"
+                      }
+
+                      MaterialTheme {
+
+                          Column(
+                              modifier = Modifier
+                                  .fillMaxSize()
+                                  .padding(24.dp),
+                              verticalArrangement =
+                                  Arrangement.Center
+                          ) {
+
+                              Text(
+                                  text = "ORION Lite",
+                                  style =
+                                      MaterialTheme.typography.headlineMedium
+                              )
+
+                              Text(
+                                  text = "Kernel: ${
+                                      if (kernel.running)
+                                          "ONLINE"
+                                      else
+                                          "OFFLINE"
+                                  }",
+                                  modifier =
+                                      Modifier.padding(top = 16.dp)
+                              )
+
+                              Text(
+                                  text = "State: $state",
+                                  modifier =
+                                      Modifier.padding(top = 8.dp)
+                              )
+
+                              Text(
+                                  text = message,
+                                  modifier =
+                                      Modifier.padding(top = 8.dp)
+                              )
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
+
+      # =========================================================
+      # 15. JAVA / GRADLE
+      # =========================================================
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Generate Gradle wrapper
+        working-directory: android
+        run: |
+          set -eux
+
+          gradle wrapper \
+            --gradle-version 8.10.2 \
+            --distribution-type bin
+
+          chmod +x gradlew
+
+
+      # =========================================================
+      # 16. BUILD REAL APK
+      # =========================================================
+      - name: Build ORION APK
+        working-directory: android
+        run: |
+          set -eux
+
+          ./gradlew :app:assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --console=plain
+
+
+      # =========================================================
+      # 17. VERIFY NO TEST FOUNDATION
+      # =========================================================
+      - name: Verify foundation
+        shell: bash
+        run: |
+          set -eux
+
+          test ! -d android/app/src/test
+          test ! -d android/app/src/androidTest
+
+          test -f android/app/src/main/java/com/orion/lite/MainActivity.kt
+          test -f android/app/src/main/java/com/orion/lite/orion/OrionKernel.kt
+          test -f android/app/src/main/java/com/orion/lite/orion/OrionCore.kt
+          test -f android/app/src/main/java/com/orion/lite/orion/DeviceMonitor.kt
+
+          test -f android/app/build/outputs/apk/debug/app-debug.apk
+
+          echo "ORION FOUNDATION BUILD: OK"
+
+
+      # =========================================================
+      # 18. COMMIT NEW FOUNDATION
+      # =========================================================
+      - name: Commit rebuilt foundation
+        shell: bash
+        run: |
+          set -eux
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+              echo "No changes to commit."
+              exit 0
+          fi
+
+          git commit -m "refactor: rebuild ORION Android foundation"
+          git push
+
+
+      # =========================================================
+      # 19. UPLOAD REAL APK
+      # =========================================================
+      - name: Upload ORION APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORION-Lite-foundation
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
