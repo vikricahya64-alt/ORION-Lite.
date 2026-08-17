@@ -20,6 +20,8 @@ import com.orion.lite.orion.DeviceMonitor
 import com.orion.lite.orion.OrionCore
 import com.orion.lite.orion.OrionKernel
 import com.orion.lite.orion.SafetyPolicy
+import com.orion.lite.orion.OrionMemory
+import com.orion.lite.orion.MemoryRecord
 
 class MainActivity : ComponentActivity() {
 
@@ -32,6 +34,7 @@ class MainActivity : ComponentActivity() {
         val router = ActionRouter()
         val safety = SafetyPolicy()
         val executor = ActionExecutor(this)
+        val memory = OrionMemory(this)
 
         kernel.register("device_monitor", monitor)
         kernel.register("core", core)
@@ -77,6 +80,17 @@ class MainActivity : ComponentActivity() {
 
                     action.value = result.message
                     safetyState.value = "ALLOWED"
+
+                    memory.remember(
+                        MemoryRecord(
+                            timestamp = System.currentTimeMillis(),
+                            battery = device.batteryPercent,
+                            state = decision.state,
+                            actionId = routedAction.id,
+                            safety = "ALLOWED",
+                            result = result.message
+                        )
+                    )
 
                 } else {
 
