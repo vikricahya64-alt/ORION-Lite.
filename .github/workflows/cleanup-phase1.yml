@@ -1,4 +1,4 @@
-name: ORION Cleanup Phase 1
+name: ORION Cleanup Diagnostic
 
 on:
   workflow_dispatch:
@@ -12,130 +12,94 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Show repository state
+      - name: Diagnostic
+        shell: bash
         run: |
-          set -eux
+          set -x
 
-          echo "=== CURRENT DIRECTORY ==="
+          echo "=== PWD ==="
           pwd
 
-          echo
           echo "=== ROOT ==="
           ls -la
 
-          echo
-          echo "=== ANDROID ==="
+          echo "=== REPOSITORY FILES ==="
+          find . -maxdepth 3 -type f | sort
+
+          echo "=== ANDROID CHECK ==="
+
           if [ -d android ]; then
-            find android -maxdepth 3 -type f | sort
+            echo "android/: OK"
           else
-            echo "ERROR: android/ does not exist"
-            exit 1
+            echo "android/: MISSING"
           fi
 
-      - name: Validate Android source
-        run: |
-          set -eux
+          if [ -d android/app ]; then
+            echo "android/app/: OK"
+          else
+            echo "android/app/: MISSING"
+          fi
 
-          test -d android
-          test -d android/app
-          test -f android/settings.gradle.kts
-          test -f android/build.gradle.kts
+          if [ -f android/settings.gradle.kts ]; then
+            echo "settings.gradle.kts: OK"
+          else
+            echo "settings.gradle.kts: MISSING"
+          fi
 
-          echo "Android source validation: OK"
+          if [ -f android/build.gradle.kts ]; then
+            echo "build.gradle.kts: OK"
+          else
+            echo "build.gradle.kts: MISSING"
+          fi
 
-      - name: Inspect Gradle Wrapper
-        run: |
-          set -eux
+          echo "=== GRADLE WRAPPER ==="
 
-          test -f android/gradlew
-          test -f android/gradle/wrapper/gradle-wrapper.properties
+          if [ -f android/gradlew ]; then
+            echo "gradlew: OK"
+          else
+            echo "gradlew: MISSING"
+          fi
 
-          echo "Gradle Wrapper files exist."
+          if [ -f android/gradle/wrapper/gradle-wrapper.properties ]; then
+            echo "wrapper properties: OK"
+          else
+            echo "wrapper properties: MISSING"
+          fi
 
-      - name: Safe cleanup generated files
-        run: |
-          set -eux
+          if [ -f android/gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "wrapper jar: OK"
+          else
+            echo "wrapper jar: MISSING"
+          fi
 
-          echo "Removing generated directories..."
+          echo "=== SUSPICIOUS FILES ==="
 
-          find . -type d \
+          echo "--- ZIP ---"
+          find . -type f -name "*.zip" -print | sort || true
+
+          echo "--- BACKUP ---"
+          find . -type f \
             \( \
-              -name "__pycache__" \
-              -o -name ".pytest_cache" \
-              -o -name ".mypy_cache" \
-              -o -name ".ruff_cache" \
-              -o -name "build" \
-              -o -name ".gradle" \
+              -iname "*backup*" \
+              -o -iname "*snapshot*" \
+              -o -iname "*old*" \
             \) \
-            -prune \
-            -exec rm -rf {} +
+            -print | sort || true
 
-          echo "Removing temporary files..."
-
+          echo "--- GENERATED ---"
           find . -type f \
             \( \
               -name "*.log" \
               -o -name "*.tmp" \
               -o -name "*.bak" \
               -o -name "*.before_*" \
-              -o -name "local.properties" \
             \) \
-            -delete
+            -print | sort || true
 
-          echo "Safe cleanup completed."
+          echo "=== GIT ==="
+          git status --short
 
-      - name: Revalidate Android source
-        run: |
-          set -eux
-
-          test -d android
-          test -d android/app
-          test -f android/settings.gradle.kts
-          test -f android/build.gradle.kts
-          test -f android/gradlew
-          test -f android/gradle/wrapper/gradle-wrapper.properties
-
-          echo "Android source remains intact."
-
-      - name: Generate cleanup report
-        run: |
-          set -eux
-
-          {
-            echo "# ORION-Lite Cleanup Phase 1"
-            echo
-            echo "## Repository"
-            git rev-parse --show-toplevel
-            echo
-            echo "## Git commit"
-            git rev-parse HEAD
-            echo
-            echo "## Remaining ZIP files"
-            find . -type f -name "*.zip" -print | sort || true
-            echo
-            echo "## Remaining backup-like files"
-            find . -type f \
-              \( \
-                -iname "*backup*" \
-                -o -iname "*snapshot*" \
-                -o -iname "*old*" \
-              \) \
-              -print | sort || true
-            echo
-            echo "## Android files"
-            find android -maxdepth 3 -type f | sort
-          } > cleanup-phase1-report.md
-
-      - name: Upload cleanup report
-        uses: actions/upload-artifact@v4
-        with:
-          name: ORION-cleanup-phase1-report
-          path: cleanup-phase1-report.md
-          if-no-files-found: error
-
-      - name: Final status
-        run: |
-          echo "ORION Cleanup Phase 1 completed successfully."
+          echo "=== DIAGNOSTIC COMPLETE ==="
