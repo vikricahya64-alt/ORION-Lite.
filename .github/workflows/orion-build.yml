@@ -31,11 +31,17 @@ jobs:
           cache: gradle
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+
+      - name: Environment
+        run: |
+          set -eux
+          java -version
+          ./gradlew --version || true
 
       - name: Validate Android project
         run: |
-          set -e
+          set -eux
 
           test -d app
           test -f settings.gradle.kts
@@ -45,16 +51,28 @@ jobs:
 
           echo "Android project structure: OK"
 
-      - name: Make Gradle executable
-        run: chmod +x gradlew
+      - name: Prepare Gradle
+        run: |
+          set -eux
+          chmod +x gradlew
 
       - name: Run unit tests
-        run: ./gradlew test --no-daemon
+        run: |
+          set -eux
+          ./gradlew test --no-daemon --stacktrace
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          set -eux
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Find APK
+        if: success()
+        run: |
+          find app/build/outputs -type f -name "*.apk" -print
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ORION-Lite-debug
