@@ -69,49 +69,52 @@ jobs:
 
           CORE="android/app/src/main/java/com/orion/lite/orion/OrionCore.kt"
 
-          if grep -Fq 'val repeatBatteryAttention =' "$CORE"; then
-            echo "Memory Decision Guard already exists."
-            exit 0
-          fi
-
-          grep -Fq '        return when {' "$CORE"
-
-          python3 -c '
-          from pathlib import Path
+          python3 - "$CORE" <<'PY'
           import sys
+          from pathlib import Path
 
           path = Path(sys.argv[1])
-          text = path.read_text()
+          lines = path.read_text().splitlines()
+
+          if any("val repeatBatteryAttention =" in line for line in lines):
+              print("Memory Decision Guard already exists.")
+              raise SystemExit(0)
 
           marker = "        return when {"
 
-          if marker not in text:
-              raise SystemExit("ERROR: return when marker not found")
-
-          guard = """        val repeatBatteryAttention =
-              previous != null &&
-              previous.state == "ATTENTION" &&
-              previous.actionId == "BATTERY_ATTENTION" &&
-              previous.result.contains(
-                  "Battery Settings",
-                  ignoreCase = true
-              ) &&
-              device.batteryPercent <= 50
-
-          if (repeatBatteryAttention) {
-              return OrionDecision(
-                  "NORMAL",
-                  "Previous battery attention already handled"
+          try:
+              index = lines.index(marker)
+          except ValueError:
+              raise SystemExit(
+                  "ERROR: exact return when marker not found"
               )
-          }
 
-"""
+          guard = [
+              '        val repeatBatteryAttention =',
+              '            previous != null &&',
+              '            previous.state == "ATTENTION" &&',
+              '            previous.actionId == "BATTERY_ATTENTION" &&',
+              '            previous.result.contains(',
+              '                "Battery Settings",',
+              '                ignoreCase = true',
+              '            ) &&',
+              '            device.batteryPercent <= 50',
+              '',
+              '        if (repeatBatteryAttention) {',
+              '            return OrionDecision(',
+              '                "NORMAL",',
+              '                "Previous battery attention already handled"',
+              '            )',
+              '        }',
+              ''
+          ]
 
-          text = text.replace(marker, guard + marker, 1)
+          lines[index:index] = guard
 
-          path.write_text(text)
+          path.write_text("\n".join(lines) + "\n")
+
           print("Memory Decision Guard applied successfully.")
-          ' "$CORE"
+          PY
 
       - name: Verify Memory Decision Guard
         shell: bash
@@ -126,7 +129,7 @@ jobs:
           grep -Fq 'previous.result.contains(' "$CORE"
           grep -Fq '"Battery Settings"' "$CORE"
           grep -Fq 'device.batteryPercent <= 50' "$CORE"
-          grep -Fq 'Previous battery attention already handled' "$CORE"
+          grep -Fq '"Previous battery attention already handled"' "$CORE"
 
           test "$(grep -Fc 'val repeatBatteryAttention =' "$CORE")" -eq 1
 
@@ -149,15 +152,35 @@ jobs:
 
           echo "Protected layers unchanged."
 
-      - name: Verify no test directories
+      - name: Verify Guard placement
         shell: bash
         run: |
           set -euo pipefail
 
-          test ! -d android/app/src/test
-          test ! -d android/app/src/androidTest
+          CORE="android/app/src/main/java/com/orion/lite/orion/OrionCore.kt"
 
-          echo "No test directories found."
+          python3 - "$CORE" <<'PY'
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text()
+
+          guard = text.find("val repeatBatteryAttention =")
+          decision = text.find("return when {")
+
+          if guard == -1:
+              raise SystemExit("ERROR: guard not found")
+
+          if decision == -1:
+              raise SystemExit("ERROR: decision block not found")
+
+          if guard >= decision:
+              raise SystemExit(
+                  "ERROR: guard is not before decision block"
+              )
+
+          print("Guard placement verified.")
+          PY
 
       - name: Build Debug APK
         working-directory: android
