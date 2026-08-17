@@ -7,7 +7,10 @@ data class OrionDecision(
 
 class OrionCore {
 
-    fun analyze(device: DeviceState): OrionDecision {
+    fun analyze(
+    device: DeviceState,
+    previous: MemoryRecord?
+): OrionDecision {
 
         return when {
             device.batteryPercent < 0 ->

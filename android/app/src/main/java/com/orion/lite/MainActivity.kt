@@ -81,7 +81,10 @@ class MainActivity : ComponentActivity() {
         }
 
 val device = monitor.read()
-                val decision = core.analyze(device)
+                val decision = core.analyze(
+            device,
+            previous
+        )
                 val routedAction = router.route(decision)
 
                 val safetyResult =
