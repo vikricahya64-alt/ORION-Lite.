@@ -1,0 +1,219 @@
+name: ORION Memory Layer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ORION Memory Layer
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Create OrionMemory
+        shell: bash
+        run: |
+          set -eux
+
+          mkdir -p android/app/src/main/java/com/orion/lite/orion
+
+          cat > android/app/src/main/java/com/orion/lite/orion/OrionMemory.kt <<'EOF'
+          package com.orion.lite.orion
+
+          import android.content.Context
+          import org.json.JSONObject
+
+          data class MemoryRecord(
+              val timestamp: Long,
+              val battery: Int,
+              val state: String,
+              val actionId: String,
+              val safety: String,
+              val result: String
+          )
+
+          class OrionMemory(
+              context: Context
+          ) {
+
+              private val preferences =
+                  context.getSharedPreferences(
+                      "orion_memory",
+                      Context.MODE_PRIVATE
+                  )
+
+              fun remember(record: MemoryRecord) {
+
+                  val json = JSONObject().apply {
+                      put("timestamp", record.timestamp)
+                      put("battery", record.battery)
+                      put("state", record.state)
+                      put("action", record.actionId)
+                      put("safety", record.safety)
+                      put("result", record.result)
+                  }
+
+                  preferences.edit()
+                      .putString("last_event", json.toString())
+                      .apply()
+              }
+
+              fun recall(): MemoryRecord? {
+
+                  val raw =
+                      preferences.getString(
+                          "last_event",
+                          null
+                      ) ?: return null
+
+                  return try {
+
+                      val json = JSONObject(raw)
+
+                      MemoryRecord(
+                          timestamp =
+                              json.getLong("timestamp"),
+                          battery =
+                              json.getInt("battery"),
+                          state =
+                              json.getString("state"),
+                          actionId =
+                              json.getString("action"),
+                          safety =
+                              json.getString("safety"),
+                          result =
+                              json.getString("result")
+                      )
+
+                  } catch (_: Exception) {
+                      null
+                  }
+              }
+          }
+          EOF
+
+      - name: Update MainActivity
+        shell: bash
+        run: |
+          set -eux
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path(
+              "android/app/src/main/java/com/orion/lite/MainActivity.kt"
+          )
+
+          text = path.read_text()
+
+          text = text.replace(
+              "import com.orion.lite.orion.SafetyPolicy",
+              """import com.orion.lite.orion.SafetyPolicy
+          import com.orion.lite.orion.OrionMemory
+          import com.orion.lite.orion.MemoryRecord"""
+          )
+
+          text = text.replace(
+              "val executor = ActionExecutor(this)",
+              """val executor = ActionExecutor(this)
+                  val memory = OrionMemory(this)"""
+          )
+
+          text = text.replace(
+              'var action = remember {',
+              """var action = remember {"""
+          )
+
+          old = """action.value = result.message
+                              safetyState.value = "ALLOWED"
+          """
+
+          new = """action.value = result.message
+                              safetyState.value = "ALLOWED"
+
+                              memory.remember(
+                                  MemoryRecord(
+                                      timestamp = System.currentTimeMillis(),
+                                      battery = device.batteryPercent,
+                                      state = decision.state,
+                                      actionId = routedAction.id,
+                                      safety = "ALLOWED",
+                                      result = result.message
+                                  )
+                              )
+          """
+
+          text = text.replace(old, new)
+
+          path.write_text(text)
+          PY
+
+      - name: Verify runtime foundation
+        shell: bash
+        run: |
+          set -eux
+
+          test -f android/app/src/main/java/com/orion/lite/orion/OrionMemory.kt
+          test -f android/app/src/main/java/com/orion/lite/MainActivity.kt
+
+          test ! -d android/app/src/test
+          test ! -d android/app/src/androidTest
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          set -eux
+
+          ./gradlew :app:assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --console=plain
+
+      - name: Verify APK
+        run: |
+          set -eux
+
+          test -f android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Commit
+        shell: bash
+        run: |
+          set -eux
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add android
+
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "feat: add ORION local memory"
+            git push
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: ORION-Lite-memory
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
