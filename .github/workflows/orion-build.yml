@@ -1,0 +1,44 @@
+name: ORION Android Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ORION-Android-Foundation-v0.1.zip"
+      - ".github/workflows/orion-build.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract ORION Android Foundation
+        run: |
+          mkdir -p workspace
+          unzip -o ORION-Android-Foundation-v0.1.zip -d workspace
+          echo "Extracted files:"
+          find workspace -maxdepth 4 -type f | sort
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build ORION
+        working-directory: workspace
+        run: |
+          gradle test
+          gradle assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORION-Lite-debug-apk
+          path: workspace/app/build/outputs/apk/debug/app-debug.apk
