@@ -53,73 +53,159 @@ jobs:
 
           echo "MainActivity backup created."
 
-          grep -Fq 'var action = remember' "$MAIN"
+          grep -Fq 'var action = remember {' "$MAIN"
           grep -Fq 'LaunchedEffect(Unit)' "$MAIN"
           grep -Fq 'val device = monitor.read()' "$MAIN"
           grep -Fq '"Action: ${action.value}"' "$MAIN"
 
           if grep -Fq 'val previous = memory.recall()' "$MAIN"; then
-            echo "Recall Layer already present."
+            echo "Recall Layer already exists."
             exit 0
           fi
 
-          awk '
-          /var action = remember \{/ {
-              print
-              print ""
-              print "        var recall = remember {"
-              print "            mutableStateOf(\"No previous event.\")"
-              print "        }"
-              next
-          }
+          python3 - "$MAIN" <<'PY'
+          import sys
+          from pathlib import Path
 
-          /LaunchedEffect\(Unit\) \{/ {
-              print
-              print ""
-              print "        val previous = memory.recall()"
-              print "        recall.value = if (previous != null) {"
-              print "            \"Previous: ${previous.state} | Battery: ${previous.battery}% | Action: ${previous.actionId} | Result: ${previous.result}\""
-              print "        } else {"
-              print "            \"No previous event.\""
-              print "        }"
-              next
-          }
+          path = Path(sys.argv[1])
+          text = path.read_text()
 
-          /"Action: \$\{action\.value\}"/ {
-              print
-              print ""
-              print "                Text("
-              print "                    text = \"Recall: ${recall.value}\","
-              print "                    modifier = Modifier.padding(top = 8.dp)"
-              print "                )"
-              next
-          }
+          action_start = text.find("var action = remember {")
+          if action_start == -1:
+              raise SystemExit("ERROR: action state not found")
 
-          {
-              print
-          }
-          ' "$MAIN" > "$MAIN.tmp"
+          action_open = text.find("{", action_start)
+          if action_open == -1:
+              raise SystemExit("ERROR: action opening brace not found")
 
-          mv "$MAIN.tmp" "$MAIN"
+          depth = 0
+          action_end = None
 
+          for i in range(action_open, len(text)):
+              if text[i] == "{":
+                  depth += 1
+              elif text[i] == "}":
+                  depth -= 1
+                  if depth == 0:
+                      action_end = i + 1
+                      break
+
+          if action_end is None:
+              raise SystemExit("ERROR: action block is not balanced")
+
+          recall_state = '''
+
+              var recall = remember {
+                  mutableStateOf("No previous event.")
+              }'''
+
+          text = text[:action_end] + recall_state + text[action_end:]
+
+          effect_marker = "LaunchedEffect(Unit) {"
+          effect_start = text.find(effect_marker)
+
+          if effect_start == -1:
+              raise SystemExit("ERROR: LaunchedEffect(Unit) not found")
+
+          recall_logic = '''
+
+                  val previous = memory.recall()
+
+                  recall.value = if (previous != null) {
+                      "Previous: ${previous.state} | Battery: ${previous.battery}% | Action: ${previous.actionId} | Result: ${previous.result}"
+                  } else {
+                      "No previous event."
+                  }
+          '''
+
+          effect_body_start = effect_start + len(effect_marker)
+
+          text = (
+              text[:effect_body_start]
+              + recall_logic
+              + text[effect_body_start:]
+          )
+
+          action_text = 'text = "Action: ${action.value}"'
+          action_text_pos = text.find(action_text)
+
+          if action_text_pos == -1:
+              raise SystemExit("ERROR: Action Text not found")
+
+          text_after_action = action_text_pos + len(action_text)
+
+          action_text_block_end = text.find(")", text_after_action)
+
+          if action_text_block_end == -1:
+              raise SystemExit("ERROR: Action Text closing parenthesis not found")
+
+          recall_ui = '''
+
+                  Text(
+                      text = "Recall: ${recall.value}",
+                      modifier = Modifier.padding(top = 8.dp)
+                  )'''
+
+          text = (
+              text[:action_text_block_end + 1]
+              + recall_ui
+              + text[action_text_block_end + 1:]
+          )
+
+          path.write_text(text)
+
+          print("Recall Layer source transformation completed.")
+          PY
+
+          echo "Checking generated Kotlin structure..."
+
+          grep -Fq 'var recall = remember {' "$MAIN"
+          grep -Fq 'val previous = memory.recall()' "$MAIN"
+          grep -Fq 'text = "Recall: ${recall.value}"' "$MAIN"
+
+          test "$(grep -Fc 'var recall = remember {' "$MAIN")" -eq 1
           test "$(grep -Fc 'val previous = memory.recall()' "$MAIN")" -eq 1
-          test "$(grep -Fc 'var recall = remember' "$MAIN")" -eq 1
-          test "$(grep -Fc 'Recall: ${recall.value}' "$MAIN")" -eq 1
+          test "$(grep -Fc 'text = "Recall: ${recall.value}"' "$MAIN")" -eq 1
 
-          echo "Recall Layer applied successfully."
+          echo "Recall Layer source verification passed."
 
-      - name: Verify Recall Layer
+      - name: Verify Recall placement
         shell: bash
         run: |
           set -euo pipefail
 
           MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
 
-          grep -Fq 'var recall = remember' "$MAIN"
-          grep -Fq 'val previous = memory.recall()' "$MAIN"
-          grep -Fq 'Recall: ${recall.value}' "$MAIN"
+          python3 - "$MAIN" <<'PY'
+          import sys
+          from pathlib import Path
 
-          echo "Recall Layer verified."
+          text = Path(sys.argv[1]).read_text()
+
+          action_start = text.find("var action = remember {")
+          recall_start = text.find("var recall = remember {")
+          effect_start = text.find("LaunchedEffect(Unit) {")
+          recall_logic = text.find("val previous = memory.recall()")
+          observe = text.find("val device = monitor.read()")
+          recall_ui = text.find('text = "Recall: ${recall.value}"')
+
+          checks = {
+              "action exists": action_start >= 0,
+              "recall state exists": recall_start >= 0,
+              "recall state after action": recall_start > action_start,
+              "LaunchedEffect exists": effect_start >= 0,
+              "recall before observe": recall_logic >= 0 and observe >= 0 and recall_logic < observe,
+              "recall UI exists": recall_ui >= 0,
+          }
+
+          for name, ok in checks.items():
+              print(f"{name}: {'OK' if ok else 'FAIL'}")
+
+          if not all(checks.values()):
+              raise SystemExit("ERROR: Recall Layer placement verification failed")
+
+          print("Recall placement verification passed.")
+          PY
 
       - name: Verify no test directories
         shell: bash
