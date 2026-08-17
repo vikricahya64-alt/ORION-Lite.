@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -37,7 +36,7 @@ jobs:
           MEMORY="android/app/src/main/java/com/orion/lite/orion/OrionMemory.kt"
 
           test -f "$MEMORY"
-          grep -Fq "fun recall()" "$MEMORY"
+          grep -Fq 'fun recall()' "$MEMORY"
 
           echo "OrionMemory.recall() verified."
 
@@ -54,75 +53,60 @@ jobs:
 
           echo "MainActivity backup created."
 
-          grep -Fq 'val memory = OrionMemory(this)' "$MAIN"
+          grep -Fq 'var action = remember' "$MAIN"
           grep -Fq 'LaunchedEffect(Unit)' "$MAIN"
+          grep -Fq 'val device = monitor.read()' "$MAIN"
           grep -Fq '"Action: ${action.value}"' "$MAIN"
 
-          if grep -Fq 'memory.recall()' "$MAIN"; then
-            echo "Recall Layer already exists."
+          if grep -Fq 'val previous = memory.recall()' "$MAIN"; then
+            echo "Recall Layer already present."
             exit 0
           fi
-
-          TMP="$(mktemp)"
 
           awk '
           /var action = remember \{/ {
               print
               print ""
-              print "              var recall = remember {"
-              print "                  mutableStateOf(\"No previous event.\")"
-              print "              }"
+              print "        var recall = remember {"
+              print "            mutableStateOf(\"No previous event.\")"
+              print "        }"
               next
           }
-          {
-              print
-          }
-          ' "$MAIN" > "$TMP"
 
-          mv "$TMP" "$MAIN"
-
-          TMP="$(mktemp)"
-
-          awk '
           /LaunchedEffect\(Unit\) \{/ {
               print
               print ""
-              print "                val previous = memory.recall()"
-              print ""
-              print "                recall.value = if (previous != null) {"
-              print "                    \"Previous: \${previous.state} | Battery: \${previous.battery}% | Action: \${previous.actionId} | Result: \${previous.result}\""
-              print "                } else {"
-              print "                    \"No previous event.\""
-              print "                }"
+              print "        val previous = memory.recall()"
+              print "        recall.value = if (previous != null) {"
+              print "            \"Previous: ${previous.state} | Battery: ${previous.battery}% | Action: ${previous.actionId} | Result: ${previous.result}\""
+              print "        } else {"
+              print "            \"No previous event.\""
+              print "        }"
               next
           }
-          {
-              print
-          }
-          ' "$MAIN" > "$TMP"
 
-          mv "$TMP" "$MAIN"
-
-          TMP="$(mktemp)"
-
-          awk '
           /"Action: \$\{action\.value\}"/ {
               print
               print ""
-              print "                    Text("
-              print "                        text = \"Recall: \${recall.value}\","
-              print "                        modifier = Modifier.padding(top = 8.dp)"
-              print "                    )"
+              print "                Text("
+              print "                    text = \"Recall: ${recall.value}\","
+              print "                    modifier = Modifier.padding(top = 8.dp)"
+              print "                )"
               next
           }
+
           {
               print
           }
-          ' "$MAIN" > "$TMP"
+          ' "$MAIN" > "$MAIN.tmp"
 
-          mv "$TMP" "$MAIN"
+          mv "$MAIN.tmp" "$MAIN"
 
-          echo "Recall Layer patch applied."
+          test "$(grep -Fc 'val previous = memory.recall()' "$MAIN")" -eq 1
+          test "$(grep -Fc 'var recall = remember' "$MAIN")" -eq 1
+          test "$(grep -Fc 'Recall: ${recall.value}' "$MAIN")" -eq 1
+
+          echo "Recall Layer applied successfully."
 
       - name: Verify Recall Layer
         shell: bash
@@ -131,11 +115,11 @@ jobs:
 
           MAIN="android/app/src/main/java/com/orion/lite/MainActivity.kt"
 
-          grep -Fq 'memory.recall()' "$MAIN"
           grep -Fq 'var recall = remember' "$MAIN"
-          grep -Fq '"Recall: ${recall.value}"' "$MAIN"
+          grep -Fq 'val previous = memory.recall()' "$MAIN"
+          grep -Fq 'Recall: ${recall.value}' "$MAIN"
 
-          echo "Recall Layer verification passed."
+          echo "Recall Layer verified."
 
       - name: Verify no test directories
         shell: bash
