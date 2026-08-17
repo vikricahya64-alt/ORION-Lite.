@@ -69,27 +69,26 @@ jobs:
 
           CORE="android/app/src/main/java/com/orion/lite/orion/OrionCore.kt"
 
-          python3 - "$CORE" <<'PY'
-          import sys
+          if grep -Fq 'val repeatBatteryAttention =' "$CORE"; then
+            echo "Memory Decision Guard already exists."
+            exit 0
+          fi
+
+          grep -Fq '        return when {' "$CORE"
+
+          python3 -c '
           from pathlib import Path
+          import sys
 
           path = Path(sys.argv[1])
           text = path.read_text()
 
-          guard_marker = 'val repeatBatteryAttention ='
+          marker = "        return when {"
 
-          if guard_marker in text:
-              print("Memory Decision Guard already exists.")
-              raise SystemExit(0)
+          if marker not in text:
+              raise SystemExit("ERROR: return when marker not found")
 
-          return_marker = '        return when {'
-
-          if return_marker not in text:
-              raise SystemExit(
-                  "ERROR: actual 'return when {' block not found"
-              )
-
-          guard = '''        val repeatBatteryAttention =
+          guard = """        val repeatBatteryAttention =
               previous != null &&
               previous.state == "ATTENTION" &&
               previous.actionId == "BATTERY_ATTENTION" &&
@@ -106,18 +105,13 @@ jobs:
               )
           }
 
-'''
+"""
 
-          text = text.replace(
-              return_marker,
-              guard + return_marker,
-              1
-          )
+          text = text.replace(marker, guard + marker, 1)
 
           path.write_text(text)
-
           print("Memory Decision Guard applied successfully.")
-          PY
+          ' "$CORE"
 
       - name: Verify Memory Decision Guard
         shell: bash
@@ -203,8 +197,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add \
-            android/app/src/main/java/com/orion/lite/orion/OrionCore.kt
+          git add android/app/src/main/java/com/orion/lite/orion/OrionCore.kt
 
           if git diff --cached --quiet; then
             echo "No Memory Guard changes to commit."
