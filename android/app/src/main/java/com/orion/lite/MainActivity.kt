@@ -19,6 +19,7 @@ import com.orion.lite.orion.ActionRouter
 import com.orion.lite.orion.DeviceMonitor
 import com.orion.lite.orion.OrionCore
 import com.orion.lite.orion.OrionKernel
+import com.orion.lite.orion.SafetyPolicy
 
 class MainActivity : ComponentActivity() {
 
@@ -29,11 +30,13 @@ class MainActivity : ComponentActivity() {
         val monitor = DeviceMonitor(this)
         val core = OrionCore()
         val router = ActionRouter()
+        val safety = SafetyPolicy()
         val executor = ActionExecutor(this)
 
         kernel.register("device_monitor", monitor)
         kernel.register("core", core)
         kernel.register("action_router", router)
+        kernel.register("safety_policy", safety)
         kernel.register("action_executor", executor)
 
         kernel.boot()
@@ -48,6 +51,10 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(-1)
             }
 
+            var safetyState = remember {
+                mutableStateOf("CHECKING")
+            }
+
             var action = remember {
                 mutableStateOf("Starting...")
             }
@@ -59,11 +66,31 @@ class MainActivity : ComponentActivity() {
                 val device = monitor.read()
                 val decision = core.analyze(device)
                 val routedAction = router.route(decision)
-                val result = executor.execute(routedAction)
 
-                battery.value = device.batteryPercent
-                state.value = decision.state
-                action.value = result.message
+                val safetyResult =
+                    safety.check(routedAction)
+
+                if (safetyResult.allowed) {
+
+                    val result =
+                        executor.execute(routedAction)
+
+                    action.value = result.message
+                    safetyState.value = "ALLOWED"
+
+                } else {
+
+                    action.value =
+                        "Action blocked by safety policy."
+
+                    safetyState.value = "BLOCKED"
+                }
+
+                battery.value =
+                    device.batteryPercent
+
+                state.value =
+                    decision.state
             }
 
             MaterialTheme {
@@ -79,34 +106,46 @@ class MainActivity : ComponentActivity() {
                     Text(
                         text = "ORION Lite",
                         style =
-                            MaterialTheme.typography.headlineMedium
+                            MaterialTheme.typography
+                                .headlineMedium
                     )
 
                     Text(
-                        text = "Kernel: ${
-                            if (kernel.running)
-                                "ONLINE"
-                            else
-                                "OFFLINE"
-                        }",
+                        text =
+                            "Kernel: ${
+                                if (kernel.running)
+                                    "ONLINE"
+                                else
+                                    "OFFLINE"
+                            }",
                         modifier =
                             Modifier.padding(top = 16.dp)
                     )
 
                     Text(
-                        text = "State: ${state.value}",
+                        text =
+                            "State: ${state.value}",
                         modifier =
                             Modifier.padding(top = 8.dp)
                     )
 
                     Text(
-                        text = "Battery: ${battery.value}%",
+                        text =
+                            "Battery: ${battery.value}%",
                         modifier =
                             Modifier.padding(top = 8.dp)
                     )
 
                     Text(
-                        text = "Action: ${action.value}",
+                        text =
+                            "Safety: ${safetyState.value}",
+                        modifier =
+                            Modifier.padding(top = 8.dp)
+                    )
+
+                    Text(
+                        text =
+                            "Action: ${action.value}",
                         modifier =
                             Modifier.padding(top = 8.dp)
                     )
