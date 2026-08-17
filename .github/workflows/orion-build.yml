@@ -3,238 +3,60 @@ name: ORION Android Build
 on:
   workflow_dispatch:
   push:
-    paths:
-      - "ORION-Android-Foundation-v0.1.zip"
-      - ".github/workflows/orion-build.yml"
+    branches:
+      - main
+      - master
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build ORION Android
+  android:
+    name: Test and Build APK
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: android
+
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Extract ORION Foundation
-        run: |
-          rm -rf workspace
-          mkdir -p workspace
-          unzip -o ORION-Android-Foundation-v0.1.zip -d workspace
-
-          echo "=== WORKSPACE ==="
-          find workspace -maxdepth 5 -type f | sort
-
-      - name: Diagnose UI
-        working-directory: workspace
-        run: |
-          echo "=== PLACEHOLDER SEARCH ==="
-          grep -RniF "orion lite android foundation v0.1" app || true
-
-          echo "=== ACTIVITIES ==="
-          grep -RniE "class .*Activity|setContentView|setContent[[:space:]]*\{|@Composable|onCreate" app/src/main \
-            --include='*.kt' \
-            --include='*.java' \
-            || true
-
-          echo "=== MAIN ACTIVITY FILES ==="
-          find app/src/main -type f \
-            \( -name "MainActivity.kt" -o -name "MainActivity.java" \) \
-            -print
-
-          echo "=== MAIN ACTIVITY CONTENT ==="
-          for f in $(find app/src/main -type f \
-            \( -name "MainActivity.kt" -o -name "MainActivity.java" \)); do
-            echo "--- $f ---"
-            sed -n '1,260p' "$f"
-          done
-
-          echo "=== STYLES FILES ==="
-          find app/src/main/res \
-            -type f \
-            -path '*/values/styles.xml' \
-            -print
-
-          echo "=== STYLES CONTENT ==="
-          for f in $(find app/src/main/res \
-            -type f \
-            -path '*/values/styles.xml'); do
-            echo "--- $f ---"
-            sed -n '1,260p' "$f"
-          done
-
-          echo "=== COMPOSE / UI SOURCES ==="
-          grep -RniE "@Composable|setContent[[:space:]]*\{|Text\(|Column\(|Row\(|Surface\(|Scaffold\(" app/src/main \
-            --include='*.kt' \
-            --include='*.java' \
-            || true
-
-          echo "=== MANIFEST ==="
-          find app/src/main -name "AndroidManifest.xml" \
-            -exec sed -n '1,240p' {} \;
-
-          echo "=== LAYOUTS ==="
-          find app/src/main/res \
-            -type f \
-            -name "*.xml" \
-            -print
-
-      - name: Set up Java 17
+      - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
-      - name: Set up Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.10.2"
-
-      - name: Configure JVM target
-        working-directory: workspace
+      - name: Validate Android project
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
+          set -e
 
-          path = Path("app/build.gradle.kts")
-          text = path.read_text()
+          test -d app
+          test -f settings.gradle.kts
+          test -f build.gradle.kts
+          test -f gradlew
+          test -f gradle/wrapper/gradle-wrapper.properties
 
-          if "sourceCompatibility = JavaVersion.VERSION_17" not in text:
-              marker = "    compileSdk = 35\n"
+          echo "Android project structure: OK"
 
-              addition = """    compileSdk = 35
+      - name: Make Gradle executable
+        run: chmod +x gradlew
 
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-
-              kotlinOptions {
-                  jvmTarget = "17"
-              }
-          """
-
-              text = text.replace(marker, addition, 1)
-              path.write_text(text)
-
-          print(path.read_text())
-          PY
-
-      - name: Add ORION Agent Core
-        working-directory: workspace
-        run: |
-          mkdir -p app/src/main/java/com/orion/lite/agent
-          mkdir -p app/src/test/java/com/orion/lite/agent
-
-          cat > app/src/main/java/com/orion/lite/agent/AgentResult.kt <<'EOF'
-          package com.orion.lite.agent
-
-          data class AgentResult(
-              val text: String,
-              val handled: Boolean = false
-          )
-          EOF
-
-          cat > app/src/main/java/com/orion/lite/agent/AgentEngine.kt <<'EOF'
-          package com.orion.lite.agent
-
-          class AgentEngine {
-
-              fun execute(input: String): AgentResult {
-                  val command = input.trim()
-
-                  if (command.isEmpty()) {
-                      return AgentResult(
-                          "Perintah kosong.",
-                          false
-                      )
-                  }
-
-                  return when {
-                      command.equals("ping", true) ->
-                          AgentResult("ORION online.", true)
-
-                      command.equals("status", true) ->
-                          AgentResult(
-                              "Agent Core v0.1 aktif.",
-                              true
-                          )
-
-                      command.equals("hello", true) ->
-                          AgentResult(
-                              "Halo. Saya ORION.",
-                              true
-                          )
-
-                      else ->
-                          AgentResult(
-                              "Perintah diterima: $command",
-                              false
-                          )
-                  }
-              }
-          }
-          EOF
-
-          cat > app/src/test/java/com/orion/lite/agent/AgentEngineTest.kt <<'EOF'
-          package com.orion.lite.agent
-
-          import org.junit.Assert.*
-          import org.junit.Test
-
-          class AgentEngineTest {
-
-              private val agent = AgentEngine()
-
-              @Test
-              fun pingWorks() {
-                  val result = agent.execute("ping")
-                  assertTrue(result.handled)
-                  assertEquals("ORION online.", result.text)
-              }
-
-              @Test
-              fun statusWorks() {
-                  val result = agent.execute("status")
-                  assertTrue(result.handled)
-                  assertEquals(
-                      "Agent Core v0.1 aktif.",
-                      result.text
-                  )
-              }
-
-              @Test
-              fun helloWorks() {
-                  val result = agent.execute("hello")
-                  assertTrue(result.handled)
-                  assertEquals(
-                      "Halo. Saya ORION.",
-                      result.text
-                  )
-              }
-          }
-          EOF
-
-      - name: Run tests
-        working-directory: workspace
-        run: |
-          gradle test
+      - name: Run unit tests
+        run: ./gradlew test --no-daemon
 
       - name: Build debug APK
-        working-directory: workspace
-        run: |
-          gradle assembleDebug
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ORION-Lite-debug-apk
-          path: workspace/app/build/outputs/apk/debug/app-debug.apk
+          name: ORION-Lite-debug
+          path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
