@@ -57,40 +57,36 @@ jobs:
           text = path.read_text()
 
           # ---------------------------------------------------------
-          # 1. Add recall state
+          # 1. Add Recall state
           # ---------------------------------------------------------
 
           if "var recall = remember" not in text:
-
               marker = 'var action = remember {'
 
               if marker not in text:
                   raise SystemExit(
-                      "ERROR: action state marker not found"
+                      "ERROR: action state not found"
                   )
 
               start = text.index(marker)
 
-              # Find the end of the action remember block.
-              end = text.find("}", start)
-
-              if end == -1:
-                  raise SystemExit(
-                      "ERROR: action state block not found"
-                  )
-
-              end += 1
+              # Find the closing brace of the remember block.
+              brace = text.index("}", start)
 
               insertion = """
-
+          
               var recall = remember {
                   mutableStateOf("No previous event.")
               }"""
 
-              text = text[:end] + insertion + text[end:]
+              text = (
+                  text[:brace + 1]
+                  + insertion
+                  + text[brace + 1:]
+              )
 
           # ---------------------------------------------------------
-          # 2. Add recall at runtime start
+          # 2. Add Recall at START
           # ---------------------------------------------------------
 
           if "val previous = memory.recall()" not in text:
@@ -104,17 +100,17 @@ jobs:
 
               insertion = """LaunchedEffect(Unit) {
 
-                  val previous = memory.recall()
+                val previous = memory.recall()
 
-                  recall.value =
-                      if (previous != null) {
-                          "Previous: ${previous.state} | " +
-                              "Battery: ${previous.battery}% | " +
-                              "Action: ${previous.actionId} | " +
-                              "Result: ${previous.result}"
-                      } else {
-                          "No previous event."
-                      }
+                recall.value =
+                    if (previous != null) {
+                        "Previous: ${previous.state} | " +
+                            "Battery: ${previous.battery}% | " +
+                            "Action: ${previous.actionId} | " +
+                            "Result: ${previous.result}"
+                    } else {
+                        "No previous event."
+                    }
           """
 
               text = text.replace(
@@ -129,26 +125,34 @@ jobs:
 
           if '"Recall: ${recall.value}"' not in text:
 
-              marker = '"Action: ${action.value}"'
+              marker = 'text =\n                        "Action: ${action.value}"'
 
-              if marker not in text:
+              position = text.find(marker)
+
+              if position == -1:
+                  # Fallback: locate the Action string itself.
+                  action_marker = '"Action: ${action.value}"'
+                  position = text.find(action_marker)
+
+              if position == -1:
                   raise SystemExit(
-                      "ERROR: Action display marker not found"
+                      "ERROR: Action display not found"
                   )
 
-              target = """                    Text(
-                        text =
-                            "Action: ${action.value}",
-                        modifier =
-                            Modifier.padding(top = 8.dp)
-                    )"""
+              # Find the end of the surrounding Text composable.
+              close = text.find(
+                  "                    )",
+                  position
+              )
 
-              if target not in text:
+              if close == -1:
                   raise SystemExit(
-                      "ERROR: Action Text block not found"
+                      "ERROR: Action Text closing block not found"
                   )
 
-              replacement = target + """
+              close += len("                    )")
+
+              insertion = """
 
                     Text(
                         text =
@@ -157,16 +161,16 @@ jobs:
                             Modifier.padding(top = 8.dp)
                     )"""
 
-              text = text.replace(
-                  target,
-                  replacement,
-                  1
+              text = (
+                  text[:close]
+                  + insertion
+                  + text[close:]
               )
 
           path.write_text(text)
 
           print("Recall Layer applied successfully.")
-          PY
+          PY         
 
       - name: Verify Recall Layer
         shell: bash
