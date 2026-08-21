@@ -44,33 +44,53 @@ class MainActivity : ComponentActivity() {
         kernel.boot()
 
         setContent {
-            val state = remember { mutableStateOf("BOOTING") }
-            val battery = remember { mutableStateOf(-1) }
-            val safetyState = remember { mutableStateOf("CHECKING") }
-            val action = remember { mutableStateOf("Starting...") }
-            val recall = remember { mutableStateOf("No previous event.") }
+            val state = remember {
+                mutableStateOf("BOOTING")
+            }
+
+            val battery = remember {
+                mutableStateOf(-1)
+            }
+
+            val safetyState = remember {
+                mutableStateOf("CHECKING")
+            }
+
+            val action = remember {
+                mutableStateOf("Starting...")
+            }
+
+            val recall = remember {
+                mutableStateOf("No previous event.")
+            }
 
             LaunchedEffect(Unit) {
                 kernel.heartbeat()
 
                 val previous = memory.recall()
-                recall.value = if (previous != null) {
-                    "Previous: ${previous.state} | Battery: ${previous.battery}% | " +
-                        "Action: ${previous.actionId} | Result: ${previous.result}"
-                } else {
-                    "No previous event."
-                }
+
+                recall.value =
+                    if (previous != null) {
+                        "Previous: ${previous.state} | Battery: ${previous.battery}% | " +
+                            "Action: ${previous.actionId} | Result: ${previous.result}"
+                    } else {
+                        "No previous event."
+                    }
 
                 val device = monitor.read()
+
                 val decision = core.analyze(
                     device,
                     previous,
                 )
+
                 val routedAction = router.route(decision)
+
                 val safetyResult = safety.check(routedAction)
 
                 if (safetyResult.allowed) {
                     val result = executor.execute(routedAction)
+
                     action.value = result.message
                     safetyState.value = "ALLOWED"
 
