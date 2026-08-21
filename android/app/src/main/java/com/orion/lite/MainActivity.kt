@@ -133,32 +133,38 @@ class MainActivity : ComponentActivity() {
                                 "OFFLINE"
                             }
                         }",
-                        modifier = Modifier.padding(top = 16.dp),
+                        modifier = Modifier
+                            .padding(top = 16.dp),
                     )
 
                     Text(
                         text = "State: ${state.value}",
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier = Modifier
+                            .padding(top = 8.dp),
                     )
 
                     Text(
                         text = "Battery: ${battery.value}%",
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier = Modifier
+                            .padding(top = 8.dp),
                     )
 
                     Text(
                         text = "Safety: ${safetyState.value}",
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier = Modifier
+                            .padding(top = 8.dp),
                     )
 
                     Text(
                         text = "Action: ${action.value}",
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier = Modifier
+                            .padding(top = 8.dp),
                     )
 
                     Text(
                         text = "Recall: ${recall.value}",
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier = Modifier
+                            .padding(top = 8.dp),
                     )
                 }
             }
