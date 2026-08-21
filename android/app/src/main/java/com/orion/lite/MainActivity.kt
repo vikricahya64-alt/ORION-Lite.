@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.orion.lite.orion.ActionExecutor
@@ -24,45 +26,52 @@ import com.orion.lite.orion.OrionMemory
 import com.orion.lite.orion.SafetyPolicy
 
 class MainActivity : ComponentActivity() {
+    private lateinit var kernel: OrionKernel
+    private lateinit var monitor: DeviceMonitor
+    private lateinit var core: OrionCore
+    private lateinit var router: ActionRouter
+    private lateinit var safety: SafetyPolicy
+    private lateinit var executor: ActionExecutor
+    private lateinit var memory: OrionMemory
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val kernel = OrionKernel()
-        val monitor = DeviceMonitor(this)
-        val core = OrionCore()
-        val router = ActionRouter()
-        val safety = SafetyPolicy()
-        val executor = ActionExecutor(this)
-        val memory = OrionMemory(this)
-
-        kernel.register("device_monitor", monitor)
-        kernel.register("core", core)
-        kernel.register("action_router", router)
-        kernel.register("safety_policy", safety)
-        kernel.register("action_executor", executor)
+        kernel = OrionKernel()
+        monitor = DeviceMonitor(this)
+        core = OrionCore()
+        router = ActionRouter()
+        safety = SafetyPolicy()
+        executor = ActionExecutor(this)
+        memory = OrionMemory(this)
 
         kernel.boot()
 
         setContent {
-            var state = remember {
-                mutableStateOf("BOOTING")
-            }
+            var state =
+                remember {
+                    mutableStateOf("BOOTING")
+                }
 
-            var battery = remember {
-                mutableStateOf(-1)
-            }
+            var battery =
+                remember {
+                    mutableStateOf(-1)
+                }
 
-            var safetyState = remember {
-                mutableStateOf("CHECKING")
-            }
+            var safetyState =
+                remember {
+                    mutableStateOf("CHECKING")
+                }
 
-            var action = remember {
-                mutableStateOf("Starting...")
-            }
+            var action =
+                remember {
+                    mutableStateOf("Starting...")
+                }
 
-            var recall = remember {
-                mutableStateOf("No previous event.")
-            }
+            var recall =
+                remember {
+                    mutableStateOf("No previous event.")
+                }
 
             LaunchedEffect(Unit) {
                 kernel.heartbeat()
@@ -97,27 +106,22 @@ class MainActivity : ComponentActivity() {
                     action.value = result.message
                     safetyState.value = "ALLOWED"
 
-                    memory.remember(
+                    memory.save(
                         MemoryRecord(
-                            timestamp = System.currentTimeMillis(),
-                            battery = device.batteryPercent,
                             state = decision.state,
+                            battery = device.batteryPercent,
                             actionId = routedAction.id,
                             safety = "ALLOWED",
                             result = result.message,
                         ),
                     )
                 } else {
-                    action.value =
-                        "Action blocked by safety policy."
+                    action.value = "Action blocked by safety policy."
                     safetyState.value = "BLOCKED"
                 }
 
-                battery.value =
-                    device.batteryPercent
-
-                state.value =
-                    decision.state
+                battery.value = device.batteryPercent
+                state.value = decision.state
             }
 
             MaterialTheme {
@@ -126,15 +130,11 @@ class MainActivity : ComponentActivity() {
                         Modifier
                             .fillMaxSize()
                             .padding(24.dp),
-                    verticalArrangement =
-                        Arrangement.Center,
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
                         text = "ORION Lite",
-                        style =
-                            MaterialTheme
-                                .typography
-                                .headlineMedium,
+                        style = MaterialTheme.typography.headlineMedium,
                     )
 
                     Text(
@@ -146,38 +146,32 @@ class MainActivity : ComponentActivity() {
                                     "OFFLINE"
                                 }
                             }",
-                        modifier =
-                            Modifier.padding(top = 16.dp),
+                        modifier = Modifier.padding(top = 16.dp),
                     )
 
                     Text(
                         text = "State: ${state.value}",
-                        modifier =
-                            Modifier.padding(top = 8.dp),
+                        modifier = Modifier.padding(top = 8.dp),
                     )
 
                     Text(
                         text = "Battery: ${battery.value}%",
-                        modifier =
-                            Modifier.padding(top = 8.dp),
+                        modifier = Modifier.padding(top = 8.dp),
                     )
 
                     Text(
                         text = "Safety: ${safetyState.value}",
-                        modifier =
-                            Modifier.padding(top = 8.dp),
+                        modifier = Modifier.padding(top = 8.dp),
                     )
 
                     Text(
                         text = "Action: ${action.value}",
-                        modifier =
-                            Modifier.padding(top = 8.dp),
+                        modifier = Modifier.padding(top = 8.dp),
                     )
 
                     Text(
                         text = "Recall: ${recall.value}",
-                        modifier =
-                            Modifier.padding(top = 8.dp),
+                        modifier = Modifier.padding(top = 8.dp),
                     )
                 }
             }
