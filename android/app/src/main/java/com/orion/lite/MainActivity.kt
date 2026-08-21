@@ -70,13 +70,17 @@ class MainActivity : ComponentActivity() {
                 val previous = memory.recall()
 
                 recall.value = if (previous != null) {
-                    "Previous: ${previous.state} | Battery: ${previous.battery}% | Action: ${previous.actionId} | Result: ${previous.result}"
+                    "Previous: ${previous.state} | Battery: ${previous.battery}% | " +
+                        "Action: ${previous.actionId} | Result: ${previous.result}"
                 } else {
                     "No previous event."
                 }
 
                 val device = monitor.read()
-                val decision = core.analyze(device, previous)
+                val decision = core.analyze(
+                    device,
+                    previous
+                )
                 val routedAction = router.route(decision)
 
                 val safetyResult = safety.check(routedAction)
