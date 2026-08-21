@@ -16,8 +16,7 @@ class ActionExecutor(
     fun execute(action: OrionAction): ExecutionResult {
         return when (action.id) {
             "LOW_POWER_NOTICE",
-            "BATTERY_ATTENTION",
-            -> {
+            "BATTERY_ATTENTION" -> {
                 val intent = Intent(
                     Settings.ACTION_BATTERY_SAVER_SETTINGS,
                 ).apply {
