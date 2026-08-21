@@ -69,24 +69,30 @@ class MainActivity : ComponentActivity() {
 
                 val previous = memory.recall()
 
-                recall.value = if (previous != null) {
-                    "Previous: ${previous.state} | Battery: ${previous.battery}% | " +
-                        "Action: ${previous.actionId} | Result: ${previous.result}"
-                } else {
-                    "No previous event."
-                }
+                recall.value =
+                    if (previous != null) {
+                        "Previous: ${previous.state} | Battery: ${previous.battery}% | " +
+                            "Action: ${previous.actionId} | Result: ${previous.result}"
+                    } else {
+                        "No previous event."
+                    }
 
                 val device = monitor.read()
-                val decision = core.analyze(
-                    device,
-                    previous,
-                )
+
+                val decision =
+                    core.analyze(
+                        device,
+                        previous,
+                    )
+
                 val routedAction = router.route(decision)
 
-                val safetyResult = safety.check(routedAction)
+                val safetyResult =
+                    safety.check(routedAction)
 
                 if (safetyResult.allowed) {
-                    val result = executor.execute(routedAction)
+                    val result =
+                        executor.execute(routedAction)
 
                     action.value = result.message
                     safetyState.value = "ALLOWED"
@@ -102,60 +108,76 @@ class MainActivity : ComponentActivity() {
                         ),
                     )
                 } else {
-                    action.value = "Action blocked by safety policy."
+                    action.value =
+                        "Action blocked by safety policy."
                     safetyState.value = "BLOCKED"
                 }
 
-                battery.value = device.batteryPercent
-                state.value = decision.state
+                battery.value =
+                    device.batteryPercent
+
+                state.value =
+                    decision.state
             }
 
             MaterialTheme {
                 Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    verticalArrangement = Arrangement.Center,
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                    verticalArrangement =
+                        Arrangement.Center,
                 ) {
                     Text(
                         text = "ORION Lite",
-                        style = MaterialTheme.typography.headlineMedium,
+                        style =
+                            MaterialTheme
+                                .typography
+                                .headlineMedium,
                     )
 
                     Text(
-                        text = "Kernel: ${
-                            if (kernel.running) {
-                                "ONLINE"
-                            } else {
-                                "OFFLINE"
-                            }
-                        }",
-                        modifier = Modifier.padding(top = 16.dp),
+                        text =
+                            "Kernel: ${
+                                if (kernel.running) {
+                                    "ONLINE"
+                                } else {
+                                    "OFFLINE"
+                                }
+                            }",
+                        modifier =
+                            Modifier.padding(top = 16.dp),
                     )
 
                     Text(
                         text = "State: ${state.value}",
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier =
+                            Modifier.padding(top = 8.dp),
                     )
 
                     Text(
                         text = "Battery: ${battery.value}%",
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier =
+                            Modifier.padding(top = 8.dp),
                     )
 
                     Text(
                         text = "Safety: ${safetyState.value}",
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier =
+                            Modifier.padding(top = 8.dp),
                     )
 
                     Text(
                         text = "Action: ${action.value}",
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier =
+                            Modifier.padding(top = 8.dp),
                     )
 
                     Text(
                         text = "Recall: ${recall.value}",
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier =
+                            Modifier.padding(top = 8.dp),
                     )
                 }
             }
