@@ -17,14 +17,13 @@ import androidx.compose.ui.unit.dp
 import com.orion.lite.orion.ActionExecutor
 import com.orion.lite.orion.ActionRouter
 import com.orion.lite.orion.DeviceMonitor
+import com.orion.lite.orion.MemoryRecord
 import com.orion.lite.orion.OrionCore
 import com.orion.lite.orion.OrionKernel
-import com.orion.lite.orion.SafetyPolicy
 import com.orion.lite.orion.OrionMemory
-import com.orion.lite.orion.MemoryRecord
+import com.orion.lite.orion.SafetyPolicy
 
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -45,56 +44,33 @@ class MainActivity : ComponentActivity() {
         kernel.boot()
 
         setContent {
-
-            var state = remember {
-                mutableStateOf("BOOTING")
-            }
-
-            var battery = remember {
-                mutableStateOf(-1)
-            }
-
-            var safetyState = remember {
-                mutableStateOf("CHECKING")
-            }
-
-            var action = remember {
-                mutableStateOf("Starting...")
-            }
-
-    var recall = remember {
-        mutableStateOf("No previous event.")
-    }
+            val state = remember { mutableStateOf("BOOTING") }
+            val battery = remember { mutableStateOf(-1) }
+            val safetyState = remember { mutableStateOf("CHECKING") }
+            val action = remember { mutableStateOf("Starting...") }
+            val recall = remember { mutableStateOf("No previous event.") }
 
             LaunchedEffect(Unit) {
-
                 kernel.heartbeat()
 
-                
+                val previous = memory.recall()
+                recall.value = if (previous != null) {
+                    "Previous: ${previous.state} | Battery: ${previous.battery}% | " +
+                        "Action: ${previous.actionId} | Result: ${previous.result}"
+                } else {
+                    "No previous event."
+                }
 
-        val previous = memory.recall()
-
-        recall.value = if (previous != null) {
-            "Previous: ${previous.state} | Battery: ${previous.battery}% | Action: ${previous.actionId} | Result: ${previous.result}"
-        } else {
-            "No previous event."
-        }
-
-val device = monitor.read()
+                val device = monitor.read()
                 val decision = core.analyze(
-            device,
-            previous
-        )
+                    device,
+                    previous,
+                )
                 val routedAction = router.route(decision)
-
-                val safetyResult =
-                    safety.check(routedAction)
+                val safetyResult = safety.check(routedAction)
 
                 if (safetyResult.allowed) {
-
-                    val result =
-                        executor.execute(routedAction)
-
+                    val result = executor.execute(routedAction)
                     action.value = result.message
                     safetyState.value = "ALLOWED"
 
@@ -105,88 +81,65 @@ val device = monitor.read()
                             state = decision.state,
                             actionId = routedAction.id,
                             safety = "ALLOWED",
-                            result = result.message
-                        )
+                            result = result.message,
+                        ),
                     )
-
                 } else {
-
-                    action.value =
-                        "Action blocked by safety policy."
-
+                    action.value = "Action blocked by safety policy."
                     safetyState.value = "BLOCKED"
                 }
 
-                battery.value =
-                    device.batteryPercent
-
-                state.value =
-                    decision.state
+                battery.value = device.batteryPercent
+                state.value = decision.state
             }
 
             MaterialTheme {
-
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(24.dp),
-                    verticalArrangement =
-                        Arrangement.Center
+                    verticalArrangement = Arrangement.Center,
                 ) {
-
                     Text(
                         text = "ORION Lite",
-                        style =
-                            MaterialTheme.typography
-                                .headlineMedium
+                        style = MaterialTheme.typography.headlineMedium,
                     )
 
                     Text(
-                        text =
-                            "Kernel: ${
-                                if (kernel.running)
-                                    "ONLINE"
-                                else
-                                    "OFFLINE"
-                            }",
-                        modifier =
-                            Modifier.padding(top = 16.dp)
+                        text = "Kernel: ${
+                            if (kernel.running) {
+                                "ONLINE"
+                            } else {
+                                "OFFLINE"
+                            }
+                        }",
+                        modifier = Modifier.padding(top = 16.dp),
                     )
 
                     Text(
-                        text =
-                            "State: ${state.value}",
-                        modifier =
-                            Modifier.padding(top = 8.dp)
+                        text = "State: ${state.value}",
+                        modifier = Modifier.padding(top = 8.dp),
                     )
 
                     Text(
-                        text =
-                            "Battery: ${battery.value}%",
-                        modifier =
-                            Modifier.padding(top = 8.dp)
+                        text = "Battery: ${battery.value}%",
+                        modifier = Modifier.padding(top = 8.dp),
                     )
 
                     Text(
-                        text =
-                            "Safety: ${safetyState.value}",
-                        modifier =
-                            Modifier.padding(top = 8.dp)
+                        text = "Safety: ${safetyState.value}",
+                        modifier = Modifier.padding(top = 8.dp),
                     )
 
                     Text(
-                        text =
-                            "Action: ${action.value}",
-                        modifier =
-                            Modifier.padding(top = 8.dp)
+                        text = "Action: ${action.value}",
+                        modifier = Modifier.padding(top = 8.dp),
                     )
 
-          Text(
-              text =
-                  "Recall: ${recall.value}",
-              modifier =
-                  Modifier.padding(top = 8.dp)
-          )
+                    Text(
+                        text = "Recall: ${recall.value}",
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
                 }
             }
         }
