@@ -10,10 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.orion.lite.orion.ActionExecutor
@@ -26,52 +24,45 @@ import com.orion.lite.orion.OrionMemory
 import com.orion.lite.orion.SafetyPolicy
 
 class MainActivity : ComponentActivity() {
-    private lateinit var kernel: OrionKernel
-    private lateinit var monitor: DeviceMonitor
-    private lateinit var core: OrionCore
-    private lateinit var router: ActionRouter
-    private lateinit var safety: SafetyPolicy
-    private lateinit var executor: ActionExecutor
-    private lateinit var memory: OrionMemory
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        kernel = OrionKernel()
-        monitor = DeviceMonitor(this)
-        core = OrionCore()
-        router = ActionRouter()
-        safety = SafetyPolicy()
-        executor = ActionExecutor(this)
-        memory = OrionMemory(this)
+        val kernel = OrionKernel()
+        val monitor = DeviceMonitor(this)
+        val core = OrionCore()
+        val router = ActionRouter()
+        val safety = SafetyPolicy()
+        val executor = ActionExecutor(this)
+        val memory = OrionMemory(this)
+
+        kernel.register("device_monitor", monitor)
+        kernel.register("core", core)
+        kernel.register("action_router", router)
+        kernel.register("safety_policy", safety)
+        kernel.register("action_executor", executor)
 
         kernel.boot()
 
         setContent {
-            var state =
-                remember {
-                    mutableStateOf("BOOTING")
-                }
+            val state = remember {
+                mutableStateOf("BOOTING")
+            }
 
-            var battery =
-                remember {
-                    mutableStateOf(-1)
-                }
+            val battery = remember {
+                mutableStateOf(-1)
+            }
 
-            var safetyState =
-                remember {
-                    mutableStateOf("CHECKING")
-                }
+            val safetyState = remember {
+                mutableStateOf("CHECKING")
+            }
 
-            var action =
-                remember {
-                    mutableStateOf("Starting...")
-                }
+            val action = remember {
+                mutableStateOf("Starting...")
+            }
 
-            var recall =
-                remember {
-                    mutableStateOf("No previous event.")
-                }
+            val recall = remember {
+                mutableStateOf("No previous event.")
+            }
 
             LaunchedEffect(Unit) {
                 kernel.heartbeat()
@@ -88,28 +79,26 @@ class MainActivity : ComponentActivity() {
 
                 val device = monitor.read()
 
-                val decision =
-                    core.analyze(
-                        device,
-                        previous,
-                    )
+                val decision = core.analyze(
+                    device,
+                    previous,
+                )
 
                 val routedAction = router.route(decision)
 
-                val safetyResult =
-                    safety.check(routedAction)
+                val safetyResult = safety.check(routedAction)
 
                 if (safetyResult.allowed) {
-                    val result =
-                        executor.execute(routedAction)
+                    val result = executor.execute(routedAction)
 
                     action.value = result.message
                     safetyState.value = "ALLOWED"
 
-                    memory.save(
+                    memory.remember(
                         MemoryRecord(
-                            state = decision.state,
+                            timestamp = System.currentTimeMillis(),
                             battery = device.batteryPercent,
+                            state = decision.state,
                             actionId = routedAction.id,
                             safety = "ALLOWED",
                             result = result.message,
@@ -126,10 +115,9 @@ class MainActivity : ComponentActivity() {
 
             MaterialTheme {
                 Column(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
@@ -138,14 +126,13 @@ class MainActivity : ComponentActivity() {
                     )
 
                     Text(
-                        text =
-                            "Kernel: ${
-                                if (kernel.running) {
-                                    "ONLINE"
-                                } else {
-                                    "OFFLINE"
-                                }
-                            }",
+                        text = "Kernel: ${
+                            if (kernel.running) {
+                                "ONLINE"
+                            } else {
+                                "OFFLINE"
+                            }
+                        }",
                         modifier = Modifier.padding(top = 16.dp),
                     )
 
