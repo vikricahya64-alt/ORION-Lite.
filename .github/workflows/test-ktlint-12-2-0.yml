@@ -1,0 +1,38 @@
+name: Test Ktlint 12.2.0
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ktlint-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Make Gradle executable
+        working-directory: android
+        run: chmod +x gradlew
+
+      - name: Verify Gradle version
+        working-directory: android
+        run: ./gradlew --version
+
+      - name: Verify ktlint tasks
+        working-directory: android
+        run: ./gradlew tasks --group="verification"
+
+      - name: Run ktlint check
+        working-directory: android
+        run: ./gradlew :app:ktlintCheck --stacktrace
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --stacktrace
